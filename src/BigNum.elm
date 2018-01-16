@@ -1,4 +1,4 @@
-module BigNum exposing (..)
+module BigNum exposing (Integer, fromInt, negate, add, subtract, multiply)
 
 
 type Sign
@@ -46,10 +46,10 @@ magnitudeFromInt i =
             quotient =
                 i // maxDigitValue
 
-            remainder =
+            rem =
                 i % maxDigitValue
         in
-            remainder :: magnitudeFromInt quotient
+            rem :: magnitudeFromInt quotient
 
 
 negate : Integer -> Integer
@@ -271,3 +271,77 @@ subMagsWithCarry m1 m2 acc prevCarry =
                     diff % maxDigitValue
             in
                 subMagsWithCarry ds1 ds2 (rem :: acc) carry
+
+
+multiply : Integer -> Integer -> Integer
+multiply i1 i2 =
+    case ( i1, i2 ) of
+        ( Zero, _ ) ->
+            Zero
+
+        ( _, Zero ) ->
+            Zero
+
+        ( Integer s1 m1, Integer s2 m2 ) ->
+            let
+                sign =
+                    if s1 == s2 then
+                        Positive
+                    else
+                        Negative
+
+                magnitude =
+                    case compare (List.length m1) (List.length m2) of
+                        GT ->
+                            mulMagsWithCarry m1 m2 [] []
+
+                        _ ->
+                            mulMagsWithCarry m2 m1 [] []
+            in
+                Integer sign magnitude
+
+
+mulMagsWithCarry : Magnitude -> Magnitude -> Magnitude -> Magnitude -> Magnitude
+mulMagsWithCarry m1 m2 acc prevCarry =
+    case ( m1, m2 ) of
+        ( _, [] ) ->
+            if prevCarry == [] then
+                List.reverse acc
+            else
+                List.reverse ((List.reverse prevCarry) ++ acc)
+
+        ( _, d :: ds ) ->
+            let
+                product =
+                    addMagsWithCarry (mulMagWithDigit m1 d [] 0) prevCarry [] 0
+
+                rem =
+                    List.head product |> Maybe.withDefault 0
+
+                carry =
+                    List.tail product |> Maybe.withDefault []
+            in
+                mulMagsWithCarry m1 ds (rem :: acc) carry
+
+
+mulMagWithDigit : Magnitude -> Digit -> Magnitude -> Digit -> Magnitude
+mulMagWithDigit m multiplier acc prevCarry =
+    case m of
+        [] ->
+            if prevCarry == 0 then
+                List.reverse acc
+            else
+                List.reverse (prevCarry :: acc)
+
+        d :: ds ->
+            let
+                product =
+                    d * multiplier + prevCarry
+
+                carry =
+                    product // maxDigitValue
+
+                rem =
+                    product % maxDigitValue
+            in
+                mulMagWithDigit ds multiplier (rem :: acc) carry
