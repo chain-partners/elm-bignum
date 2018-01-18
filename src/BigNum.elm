@@ -1,4 +1,19 @@
-module BigNum exposing (Integer, fromInt, negate, add, subtract, multiply)
+module BigNum
+    exposing
+        ( Integer
+        , fromInt
+        , negate
+        , abs
+        , add
+        , sub
+        , mul
+        , divmod
+        , unsafeDivmod
+        , div
+        , unsafeDiv
+        , rem
+        , unsafeRem
+        )
 
 
 type Sign
@@ -7,6 +22,10 @@ type Sign
 
 
 type alias Digit =
+    Int
+
+
+type alias Base =
     Int
 
 
@@ -19,14 +38,14 @@ type Integer
     | Zero
 
 
-maxDigitValue : Digit
-maxDigitValue =
+maxBase : Base
+maxBase =
     2 ^ 26
 
 
 fromInt : Int -> Integer
 fromInt i =
-    case compare i 0 of
+    case Basics.compare i 0 of
         GT ->
             Integer Positive (magnitudeFromInt i)
 
@@ -34,20 +53,20 @@ fromInt i =
             Zero
 
         LT ->
-            Integer Negative (magnitudeFromInt (abs i))
+            Integer Negative (magnitudeFromInt (Basics.abs i))
 
 
 magnitudeFromInt : Int -> Magnitude
 magnitudeFromInt i =
-    if i < maxDigitValue then
+    if i < maxBase then
         [ i ]
     else
         let
             quotient =
-                i // maxDigitValue
+                i // maxBase
 
             rem =
-                i % maxDigitValue
+                i % maxBase
         in
             rem :: magnitudeFromInt quotient
 
@@ -60,6 +79,84 @@ negate i =
 
         Integer s m ->
             Integer (negateSign s) m
+
+
+abs : Integer -> Integer
+abs i =
+    case i of
+        Zero ->
+            Zero
+
+        Integer Positive _ ->
+            i
+
+        Integer Negative m ->
+            Integer Positive m
+
+
+getMag : Integer -> Magnitude
+getMag i =
+    case i of
+        Zero ->
+            [ 0 ]
+
+        Integer _ m ->
+            m
+
+
+magLength : Integer -> Int
+magLength i =
+    case i of
+        Zero ->
+            1
+
+        Integer _ m ->
+            List.length m
+
+
+takeDigit : Int -> Integer -> Integer
+takeDigit n i =
+    case i of
+        Zero ->
+            Zero
+
+        Integer s m ->
+            Integer s (List.take n m)
+
+
+headAndTail : Integer -> ( Integer, Integer )
+headAndTail i =
+    case i of
+        Zero ->
+            ( Zero, Zero )
+
+        Integer s m ->
+            let
+                rM =
+                    List.reverse m
+            in
+                case rM of
+                    [] ->
+                        ( Zero, Zero )
+
+                    [ rd ] ->
+                        ( (Integer s [ rd ]), Zero )
+
+                    rd :: rds ->
+                        ( (Integer s [ rd ]), (Integer s (List.reverse rds)) )
+
+
+shiftRightBy : Int -> Integer -> Integer
+shiftRightBy n i =
+    case i of
+        Zero ->
+            Zero
+
+        Integer s m ->
+            if n <= 0 then
+                i
+            else
+                shiftRightBy (n - 1) (Integer s (0 :: m))
 
 
 negateSign : Sign -> Sign
@@ -87,18 +184,46 @@ add i1 i2 =
             else
                 case compareMag m1 m2 of
                     GT ->
-                        subtract i1 i2
+                        sub i1 i2
 
                     EQ ->
                         Zero
 
                     LT ->
-                        subtract i2 i1
+                        sub i2 i1
+
+
+compare : Integer -> Integer -> Order
+compare i1 i2 =
+    case ( i1, i2 ) of
+        ( Zero, Zero ) ->
+            EQ
+
+        ( Zero, Integer Positive _ ) ->
+            LT
+
+        ( Zero, Integer Negative _ ) ->
+            GT
+
+        ( Integer Positive _, Zero ) ->
+            GT
+
+        ( Integer Negative _, Zero ) ->
+            LT
+
+        ( Integer Positive _, Integer Negative _ ) ->
+            GT
+
+        ( Integer Negative _, Integer Positive _ ) ->
+            LT
+
+        ( Integer _ m1, Integer _ m2 ) ->
+            compareMag m1 m2
 
 
 compareMag : Magnitude -> Magnitude -> Order
 compareMag m1 m2 =
-    case compare (List.length m1) (List.length m2) of
+    case Basics.compare (List.length m1) (List.length m2) of
         GT ->
             GT
 
@@ -120,7 +245,7 @@ compareMag m1 m2 =
                             LT
 
                         ( d1 :: ds1, d2 :: ds2 ) ->
-                            case compare d1 d2 of
+                            case Basics.compare d1 d2 of
                                 GT ->
                                     GT
 
@@ -148,13 +273,13 @@ addMagsWithCarry m1 m2 acc prevCarry =
                     d + prevCarry
 
                 carry =
-                    if sum >= maxDigitValue then
+                    if sum >= maxBase then
                         1
                     else
                         0
 
                 rem =
-                    sum % maxDigitValue
+                    sum % maxBase
             in
                 addMagsWithCarry [] ds (rem :: acc) carry
 
@@ -164,13 +289,13 @@ addMagsWithCarry m1 m2 acc prevCarry =
                     d + prevCarry
 
                 carry =
-                    if sum >= maxDigitValue then
+                    if sum >= maxBase then
                         1
                     else
                         0
 
                 rem =
-                    sum % maxDigitValue
+                    sum % maxBase
             in
                 addMagsWithCarry ds [] (rem :: acc) carry
 
@@ -180,19 +305,19 @@ addMagsWithCarry m1 m2 acc prevCarry =
                     d1 + d2 + prevCarry
 
                 carry =
-                    if sum >= maxDigitValue then
+                    if sum >= maxBase then
                         1
                     else
                         0
 
                 rem =
-                    sum % maxDigitValue
+                    sum % maxBase
             in
                 addMagsWithCarry ds1 ds2 (rem :: acc) carry
 
 
-subtract : Integer -> Integer -> Integer
-subtract i1 i2 =
+sub : Integer -> Integer -> Integer
+sub i1 i2 =
     case ( i1, i2 ) of
         ( Zero, _ ) ->
             negate i2
@@ -236,7 +361,7 @@ subMagsWithCarry m1 m2 acc prevCarry =
                         0
 
                 rem =
-                    diff % maxDigitValue
+                    diff % maxBase
             in
                 subMagsWithCarry [] ds (rem :: acc) carry
 
@@ -252,7 +377,7 @@ subMagsWithCarry m1 m2 acc prevCarry =
                         0
 
                 rem =
-                    diff % maxDigitValue
+                    diff % maxBase
             in
                 subMagsWithCarry ds [] (rem :: acc) carry
 
@@ -268,13 +393,13 @@ subMagsWithCarry m1 m2 acc prevCarry =
                         0
 
                 rem =
-                    diff % maxDigitValue
+                    diff % maxBase
             in
                 subMagsWithCarry ds1 ds2 (rem :: acc) carry
 
 
-multiply : Integer -> Integer -> Integer
-multiply i1 i2 =
+mul : Integer -> Integer -> Integer
+mul i1 i2 =
     case ( i1, i2 ) of
         ( Zero, _ ) ->
             Zero
@@ -291,7 +416,7 @@ multiply i1 i2 =
                         Negative
 
                 magnitude =
-                    case compare (List.length m1) (List.length m2) of
+                    case Basics.compare (List.length m1) (List.length m2) of
                         GT ->
                             mulMagsWithCarry m1 m2 [] []
 
@@ -313,7 +438,7 @@ mulMagsWithCarry m1 m2 acc prevCarry =
         ( _, d :: ds ) ->
             let
                 product =
-                    addMagsWithCarry (mulMagWithDigit m1 d [] 0) prevCarry [] 0
+                    addMagsWithCarry (mulMagWithOneDigit m1 d [] 0) prevCarry [] 0
 
                 rem =
                     List.head product |> Maybe.withDefault 0
@@ -324,8 +449,8 @@ mulMagsWithCarry m1 m2 acc prevCarry =
                 mulMagsWithCarry m1 ds (rem :: acc) carry
 
 
-mulMagWithDigit : Magnitude -> Digit -> Magnitude -> Digit -> Magnitude
-mulMagWithDigit m multiplier acc prevCarry =
+mulMagWithOneDigit : Magnitude -> Digit -> Magnitude -> Digit -> Magnitude
+mulMagWithOneDigit m multiplier acc prevCarry =
     case m of
         [] ->
             if prevCarry == 0 then
@@ -339,9 +464,135 @@ mulMagWithDigit m multiplier acc prevCarry =
                     d * multiplier + prevCarry
 
                 carry =
-                    product // maxDigitValue
+                    product // maxBase
 
                 rem =
-                    product % maxDigitValue
+                    product % maxBase
             in
-                mulMagWithDigit ds multiplier (rem :: acc) carry
+                mulMagWithOneDigit ds multiplier (rem :: acc) carry
+
+
+div : Integer -> Integer -> Maybe Integer
+div dividend divisor =
+    divmod dividend divisor
+        |> Maybe.map Tuple.first
+
+
+unsafeDiv : Integer -> Integer -> Integer
+unsafeDiv dividend divisor =
+    divmod dividend divisor
+        |> Maybe.map Tuple.first
+        |> Maybe.withDefault (fromInt 0)
+
+
+rem : Integer -> Integer -> Maybe Integer
+rem dividend divisor =
+    divmod dividend divisor
+        |> Maybe.map Tuple.second
+
+
+unsafeRem : Integer -> Integer -> Integer
+unsafeRem dividend divisor =
+    divmod dividend divisor
+        |> Maybe.map Tuple.second
+        |> Maybe.withDefault (fromInt 0)
+
+
+divmod : Integer -> Integer -> Maybe ( Integer, Integer )
+divmod dividend divisor =
+    case ( dividend, divisor ) of
+        ( Zero, _ ) ->
+            Just ( Zero, Zero )
+
+        ( _, Zero ) ->
+            Nothing
+
+        ( Integer s1 m1, Integer s2 m2 ) ->
+            case compareMag m1 m2 of
+                LT ->
+                    Just ( Zero, dividend )
+
+                EQ ->
+                    let
+                        sign =
+                            if s1 == s2 then
+                                Positive
+                            else
+                                Negative
+                    in
+                        Just ( Integer sign [ 1 ], Zero )
+
+                GT ->
+                    divmod_ dividend divisor Zero Zero
+
+
+unsafeDivmod : Integer -> Integer -> ( Integer, Integer )
+unsafeDivmod dividend divisor =
+    divmod dividend divisor
+        |> Maybe.withDefault ( Zero, Zero )
+
+
+divmod_ : Integer -> Integer -> Integer -> Integer -> Maybe ( Integer, Integer )
+divmod_ dividend divisor quotAcc prevRem =
+    case compare dividend divisor of
+        LT ->
+            Just ( quotAcc, prevRem )
+
+        _ ->
+            let
+                ( head, tail ) =
+                    headAndTail dividend
+
+                dividend_ =
+                    add head (shiftRightBy 1 prevRem)
+
+                ( quotient, rem ) =
+                    divmodHelper dividend_ divisor maxBase 0
+
+                quotAcc_ =
+                    add (fromInt quotient) (shiftRightBy 1 quotAcc)
+            in
+                divmod_ tail divisor quotAcc_ rem
+
+
+divmodHelper : Integer -> Integer -> Digit -> Digit -> ( Digit, Integer )
+divmodHelper dividend divisor normalizer acc =
+    case compare dividend divisor of
+        LT ->
+            ( acc, dividend )
+
+        _ ->
+            case compare dividend (mul divisor (fromInt normalizer)) of
+                LT ->
+                    divmodHelper dividend divisor (normalizer // 2) acc
+
+                _ ->
+                    let
+                        dividend_ =
+                            sub dividend (mul divisor (fromInt normalizer))
+
+                        normalizer_ =
+                            (normalizer // 2)
+                    in
+                        divmodHelper dividend_ divisor normalizer_ (acc + normalizer)
+
+
+
+{-
+   toString :
+   1. convert to base10
+   2. concat string
+
+   toString : Integer -> String
+   toString i =
+       i
+       |> convertToBase10
+       |> concatString
+
+   convertToBase10 : Integer -> Integer
+   convertToBase10 i =
+       case i of
+           Zero -> Zero
+           Integer s m ->
+
+-}
