@@ -13,6 +13,7 @@ module BigNum
         , unsafeDiv
         , rem
         , unsafeRem
+        , compare
         )
 
 
@@ -139,11 +140,11 @@ headAndTail i =
                     [] ->
                         ( Zero, Zero )
 
-                    [ rd ] ->
-                        ( (Integer s [ rd ]), Zero )
+                    rd :: [] ->
+                        ( fromInt rd, Zero )
 
                     rd :: rds ->
-                        ( (Integer s [ rd ]), (Integer s (List.reverse rds)) )
+                        ( fromInt rd, Integer s (List.reverse rds) )
 
 
 shiftRightBy : Int -> Integer -> Integer
@@ -263,9 +264,11 @@ addMagsWithCarry m1 m2 acc prevCarry =
     case ( m1, m2 ) of
         ( [], [] ) ->
             if prevCarry == 0 then
-                List.reverse acc
+                acc
+                    |> removeLeadingZero
             else
-                List.reverse (prevCarry :: acc)
+                (prevCarry :: acc)
+                    |> removeLeadingZero
 
         ( [], d :: ds ) ->
             let
@@ -345,9 +348,11 @@ subMagsWithCarry m1 m2 acc prevCarry =
     case ( m1, m2 ) of
         ( [], [] ) ->
             if prevCarry == 0 then
-                List.reverse acc
+                acc
+                    |> removeLeadingZero
             else
-                List.reverse (prevCarry :: acc)
+                (prevCarry :: acc)
+                    |> removeLeadingZero
 
         ( [], d :: ds ) ->
             let
@@ -396,6 +401,23 @@ subMagsWithCarry m1 m2 acc prevCarry =
                     diff % maxBase
             in
                 subMagsWithCarry ds1 ds2 (rem :: acc) carry
+
+
+removeLeadingZero : Magnitude -> Magnitude
+removeLeadingZero m =
+    dropWhileEnd ((==) 0) (List.reverse m)
+
+
+dropWhileEnd : (a -> Bool) -> List a -> List a
+dropWhileEnd p =
+    List.foldr
+        (\x xs ->
+            if p x && List.isEmpty xs then
+                []
+            else
+                x :: xs
+        )
+        []
 
 
 mul : Integer -> Integer -> Integer
@@ -482,7 +504,7 @@ unsafeDiv : Integer -> Integer -> Integer
 unsafeDiv dividend divisor =
     divmod dividend divisor
         |> Maybe.map Tuple.first
-        |> Maybe.withDefault (fromInt 0)
+        |> Maybe.withDefault (Zero)
 
 
 rem : Integer -> Integer -> Maybe Integer
@@ -495,7 +517,7 @@ unsafeRem : Integer -> Integer -> Integer
 unsafeRem dividend divisor =
     divmod dividend divisor
         |> Maybe.map Tuple.second
-        |> Maybe.withDefault (fromInt 0)
+        |> Maybe.withDefault (Zero)
 
 
 divmod : Integer -> Integer -> Maybe ( Integer, Integer )
@@ -533,48 +555,49 @@ unsafeDivmod dividend divisor =
 
 
 divmod_ : Integer -> Integer -> Integer -> Integer -> Maybe ( Integer, Integer )
-divmod_ dividend divisor quotAcc prevRem =
-    case compare dividend divisor of
-        LT ->
-            Just ( quotAcc, prevRem )
+divmod_ dividend divisor qAcc prevR =
+    if dividend == Zero then
+        Just ( qAcc, prevR )
+    else
+        let
+            ( d, ds ) =
+                headAndTail dividend
 
-        _ ->
-            let
-                ( head, tail ) =
-                    headAndTail dividend
+            dividend_ =
+                add d (shiftRightBy 1 prevR)
 
-                dividend_ =
-                    add head (shiftRightBy 1 prevRem)
+            ( q, rem ) =
+                divmodHelper dividend_ divisor maxBase Zero
 
-                ( quotient, rem ) =
-                    divmodHelper dividend_ divisor maxBase 0
-
-                quotAcc_ =
-                    add (fromInt quotient) (shiftRightBy 1 quotAcc)
-            in
-                divmod_ tail divisor quotAcc_ rem
+            qAcc_ =
+                add q (shiftRightBy 1 qAcc)
+        in
+            divmod_ ds divisor qAcc_ rem
 
 
-divmodHelper : Integer -> Integer -> Digit -> Digit -> ( Digit, Integer )
+divmodHelper : Integer -> Integer -> Digit -> Integer -> ( Integer, Integer )
 divmodHelper dividend divisor normalizer acc =
     case compare dividend divisor of
         LT ->
             ( acc, dividend )
 
-        _ ->
+        EQ ->
+            ( add acc (fromInt 1), Zero )
+
+        GT ->
             case compare dividend (mul divisor (fromInt normalizer)) of
                 LT ->
                     divmodHelper dividend divisor (normalizer // 2) acc
 
-                _ ->
+                EQ ->
+                    ( add acc (fromInt normalizer), Zero )
+
+                GT ->
                     let
                         dividend_ =
                             sub dividend (mul divisor (fromInt normalizer))
-
-                        normalizer_ =
-                            (normalizer // 2)
                     in
-                        divmodHelper dividend_ divisor normalizer_ (acc + normalizer)
+                        divmodHelper dividend_ divisor normalizer (add acc (fromInt normalizer))
 
 
 
