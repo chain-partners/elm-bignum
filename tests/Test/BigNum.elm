@@ -137,7 +137,7 @@ suite =
                         b =
                             fromInt 1
                     in
-                        Expect.equal (unsafeDiv a b) a
+                        Expect.equal (div a b) a
             , describe "should have zero property"
                 [ test "dividing zero yields zero" <|
                     \_ ->
@@ -148,7 +148,7 @@ suite =
                             b =
                                 fromInt 0
                         in
-                            Expect.equal (unsafeDiv b a) b
+                            Expect.equal (div b a) b
                 , test "dividing with zero yields Nothing" <|
                     \_ ->
                         let
@@ -158,7 +158,7 @@ suite =
                             b =
                                 fromInt 0
                         in
-                            Expect.equal (div a b) Nothing
+                            Expect.equal (safeDiv a b) Nothing
                 ]
             , describe "should have distributive property"
                 [ test "should have left-associative distributive property" <|
@@ -174,12 +174,52 @@ suite =
                                 fromInt (2 ^ 20 - 997831)
 
                             ( aq, ar ) =
-                                Debug.log "aq ar" (unsafeDivmod a c)
+                                divmod a c
 
                             ( bq, br ) =
-                                Debug.log "bq br" (unsafeDivmod b c)
+                                divmod b c
+
+                            sumq =
+                                add aq bq
+
+                            sumr =
+                                add ar br
+
+                            ( sumr_carry, sumr_r ) =
+                                divmod sumr c
                         in
-                            Expect.equal (unsafeDivmod (add a b) c) ( add aq bq, add ar br )
+                            Expect.equal (divmod (add a b) c) ( add sumq sumr_carry, sumr_r )
+                , test "should not have right-associative distributive property" <|
+                    \_ ->
+                        let
+                            a =
+                                fromInt (2 ^ 20 + 3335)
+
+                            b =
+                                fromInt (2 ^ 25 - 8311)
+
+                            c =
+                                fromInt (2 ^ 5 + 3)
+
+                            ( acq, acr ) =
+                                divmod a c
+
+                            ( abq, abr ) =
+                                divmod a b
+
+                            ( q, r ) =
+                                divmod a (add b c)
+
+                            sumq =
+                                add acq abq
+
+                            sumr =
+                                add abr acr
+
+                            ( sumr_carry, sumr_r ) =
+                                divmod sumr a
+                        in
+                            Expect.notEqual ( q, r ) ( add sumq sumr_carry, sumr_r )
                 ]
             ]
         ]

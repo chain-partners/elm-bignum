@@ -8,11 +8,11 @@ module BigNum
         , sub
         , mul
         , divmod
-        , unsafeDivmod
+        , safeDivmod
         , div
-        , unsafeDiv
+        , safeDiv
         , rem
-        , unsafeRem
+        , safeRem
         , compare
         )
 
@@ -41,7 +41,7 @@ type Integer
 
 maxBase : Base
 maxBase =
-    2 ^ 26
+    10 ^ 7
 
 
 fromInt : Int -> Integer
@@ -494,34 +494,34 @@ mulMagWithOneDigit m multiplier acc prevCarry =
                 mulMagWithOneDigit ds multiplier (rem :: acc) carry
 
 
-div : Integer -> Integer -> Maybe Integer
+safeDiv : Integer -> Integer -> Maybe Integer
+safeDiv dividend divisor =
+    safeDivmod dividend divisor
+        |> Maybe.map Tuple.first
+
+
+div : Integer -> Integer -> Integer
 div dividend divisor =
-    divmod dividend divisor
-        |> Maybe.map Tuple.first
-
-
-unsafeDiv : Integer -> Integer -> Integer
-unsafeDiv dividend divisor =
-    divmod dividend divisor
+    safeDivmod dividend divisor
         |> Maybe.map Tuple.first
         |> Maybe.withDefault (Zero)
 
 
-rem : Integer -> Integer -> Maybe Integer
+safeRem : Integer -> Integer -> Maybe Integer
+safeRem dividend divisor =
+    safeDivmod dividend divisor
+        |> Maybe.map Tuple.second
+
+
+rem : Integer -> Integer -> Integer
 rem dividend divisor =
-    divmod dividend divisor
-        |> Maybe.map Tuple.second
-
-
-unsafeRem : Integer -> Integer -> Integer
-unsafeRem dividend divisor =
-    divmod dividend divisor
+    safeDivmod dividend divisor
         |> Maybe.map Tuple.second
         |> Maybe.withDefault (Zero)
 
 
-divmod : Integer -> Integer -> Maybe ( Integer, Integer )
-divmod dividend divisor =
+safeDivmod : Integer -> Integer -> Maybe ( Integer, Integer )
+safeDivmod dividend divisor =
     case ( dividend, divisor ) of
         ( Zero, _ ) ->
             Just ( Zero, Zero )
@@ -548,9 +548,9 @@ divmod dividend divisor =
                     divmod_ dividend divisor Zero Zero
 
 
-unsafeDivmod : Integer -> Integer -> ( Integer, Integer )
-unsafeDivmod dividend divisor =
-    divmod dividend divisor
+divmod : Integer -> Integer -> ( Integer, Integer )
+divmod dividend divisor =
+    safeDivmod dividend divisor
         |> Maybe.withDefault ( Zero, Zero )
 
 
