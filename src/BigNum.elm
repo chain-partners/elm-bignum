@@ -2,8 +2,7 @@ module BigNum
     exposing
         ( Integer
         , fromInt
-        , negate
-        , abs
+        , fromString
         , add
         , sub
         , mul
@@ -13,10 +12,18 @@ module BigNum
         , safeDiv
         , rem
         , safeRem
+        , abs
+        , negate
         , compare
         , toString
-        , fromString
         )
+
+-- Types
+
+
+type Integer
+    = Integer Sign Magnitude
+    | Zero
 
 
 type Sign
@@ -36,14 +43,17 @@ type alias Magnitude =
     List Digit
 
 
-type Integer
-    = Integer Sign Magnitude
-    | Zero
+
+-- Constants
 
 
 maxBase : Base
 maxBase =
     10 ^ 7
+
+
+
+-- Constructors
 
 
 fromInt : Int -> Integer
@@ -57,6 +67,21 @@ fromInt i =
 
         LT ->
             Integer Negative (magnitudeFromInt (Basics.abs i))
+
+
+magnitudeFromInt : Int -> Magnitude
+magnitudeFromInt i =
+    if i < maxBase then
+        [ i ]
+    else
+        let
+            quotient =
+                i // maxBase
+
+            rem =
+                i % maxBase
+        in
+            rem :: magnitudeFromInt quotient
 
 
 fromString : String -> Maybe Integer
@@ -88,20 +113,6 @@ magnitudeFromString s =
         |> combine
 
 
-combine : List (Maybe Int) -> Maybe (List Int)
-combine =
-    List.foldl
-        (\x acc ->
-            case x of
-                Nothing ->
-                    Nothing
-
-                Just i ->
-                    Maybe.map ((::) i) acc
-        )
-        (Just [])
-
-
 splitBy : Int -> List String -> String -> List String
 splitBy n acc s =
     if s == "" then
@@ -117,117 +128,22 @@ splitBy n acc s =
             splitBy n (chunk :: acc) rest
 
 
-magnitudeFromInt : Int -> Magnitude
-magnitudeFromInt i =
-    if i < maxBase then
-        [ i ]
-    else
-        let
-            quotient =
-                i // maxBase
+combine : List (Maybe Int) -> Maybe (List Int)
+combine =
+    List.foldl
+        (\x acc ->
+            case x of
+                Nothing ->
+                    Nothing
 
-            rem =
-                i % maxBase
-        in
-            rem :: magnitudeFromInt quotient
-
-
-negate : Integer -> Integer
-negate i =
-    case i of
-        Zero ->
-            Zero
-
-        Integer s m ->
-            Integer (negateSign s) m
+                Just i ->
+                    Maybe.map ((::) i) acc
+        )
+        (Just [])
 
 
-abs : Integer -> Integer
-abs i =
-    case i of
-        Zero ->
-            Zero
 
-        Integer Positive _ ->
-            i
-
-        Integer Negative m ->
-            Integer Positive m
-
-
-getMag : Integer -> Magnitude
-getMag i =
-    case i of
-        Zero ->
-            [ 0 ]
-
-        Integer _ m ->
-            m
-
-
-magLength : Integer -> Int
-magLength i =
-    case i of
-        Zero ->
-            1
-
-        Integer _ m ->
-            List.length m
-
-
-takeDigit : Int -> Integer -> Integer
-takeDigit n i =
-    case i of
-        Zero ->
-            Zero
-
-        Integer s m ->
-            Integer s (List.take n m)
-
-
-headAndTail : Integer -> ( Integer, Integer )
-headAndTail i =
-    case i of
-        Zero ->
-            ( Zero, Zero )
-
-        Integer s m ->
-            let
-                rM =
-                    List.reverse m
-            in
-                case rM of
-                    [] ->
-                        ( Zero, Zero )
-
-                    rd :: [] ->
-                        ( fromInt rd, Zero )
-
-                    rd :: rds ->
-                        ( fromInt rd, Integer s (List.reverse rds) )
-
-
-shiftRightBy : Int -> Integer -> Integer
-shiftRightBy n i =
-    case i of
-        Zero ->
-            Zero
-
-        Integer s m ->
-            if n <= 0 then
-                i
-            else
-                shiftRightBy (n - 1) (Integer s (0 :: m))
-
-
-negateSign : Sign -> Sign
-negateSign s =
-    case s of
-        Positive ->
-            Negative
-
-        Negative ->
-            Positive
+-- Basic Operations
 
 
 add : Integer -> Integer -> Integer
@@ -254,81 +170,14 @@ add i1 i2 =
                         sub i2 i1
 
 
-compare : Integer -> Integer -> Order
-compare i1 i2 =
-    case ( i1, i2 ) of
-        ( Zero, Zero ) ->
-            EQ
-
-        ( Zero, Integer Positive _ ) ->
-            LT
-
-        ( Zero, Integer Negative _ ) ->
-            GT
-
-        ( Integer Positive _, Zero ) ->
-            GT
-
-        ( Integer Negative _, Zero ) ->
-            LT
-
-        ( Integer Positive _, Integer Negative _ ) ->
-            GT
-
-        ( Integer Negative _, Integer Positive _ ) ->
-            LT
-
-        ( Integer _ m1, Integer _ m2 ) ->
-            compareMag m1 m2
-
-
-compareMag : Magnitude -> Magnitude -> Order
-compareMag m1 m2 =
-    case Basics.compare (List.length m1) (List.length m2) of
-        GT ->
-            GT
-
-        LT ->
-            LT
-
-        EQ ->
-            let
-                compareMag_ : Magnitude -> Magnitude -> Order
-                compareMag_ m1 m2 =
-                    case ( m1, m2 ) of
-                        ( [], [] ) ->
-                            EQ
-
-                        ( d :: ds, [] ) ->
-                            GT
-
-                        ( [], d :: ds ) ->
-                            LT
-
-                        ( d1 :: ds1, d2 :: ds2 ) ->
-                            case Basics.compare d1 d2 of
-                                GT ->
-                                    GT
-
-                                EQ ->
-                                    compareMag_ ds1 ds2
-
-                                LT ->
-                                    LT
-            in
-                compareMag_ (List.reverse m1) (List.reverse m2)
-
-
 addMagsWithCarry : Magnitude -> Magnitude -> Magnitude -> Digit -> Magnitude
 addMagsWithCarry m1 m2 acc prevCarry =
     case ( m1, m2 ) of
         ( [], [] ) ->
             if prevCarry == 0 then
-                acc
-                    |> removeLeadingZero
+                removeLeadingZero acc
             else
-                (prevCarry :: acc)
-                    |> removeLeadingZero
+                removeLeadingZero (prevCarry :: acc)
 
         ( [], d :: ds ) ->
             let
@@ -408,11 +257,10 @@ subMagsWithCarry m1 m2 acc prevCarry =
     case ( m1, m2 ) of
         ( [], [] ) ->
             if prevCarry == 0 then
-                acc
-                    |> removeLeadingZero
+                removeLeadingZero acc
             else
-                (prevCarry :: acc)
-                    |> removeLeadingZero
+                removeLeadingZero
+                    (prevCarry :: acc)
 
         ( [], d :: ds ) ->
             let
@@ -463,23 +311,6 @@ subMagsWithCarry m1 m2 acc prevCarry =
                 subMagsWithCarry ds1 ds2 (rem :: acc) carry
 
 
-removeLeadingZero : Magnitude -> Magnitude
-removeLeadingZero m =
-    dropWhileEnd ((==) 0) (List.reverse m)
-
-
-dropWhileEnd : (a -> Bool) -> List a -> List a
-dropWhileEnd p =
-    List.foldr
-        (\x xs ->
-            if p x && List.isEmpty xs then
-                []
-            else
-                x :: xs
-        )
-        []
-
-
 mul : Integer -> Integer -> Integer
 mul i1 i2 =
     case ( i1, i2 ) of
@@ -523,10 +354,14 @@ mulMagsWithCarry m1 m2 acc prevCarry =
                     addMagsWithCarry (mulMagWithOneDigit m1 d [] 0) prevCarry [] 0
 
                 rem =
-                    List.head product |> Maybe.withDefault 0
+                    product
+                        |> List.head
+                        |> Maybe.withDefault 0
 
                 carry =
-                    List.tail product |> Maybe.withDefault []
+                    product
+                        |> List.tail
+                        |> Maybe.withDefault []
             in
                 mulMagsWithCarry m1 ds (rem :: acc) carry
 
@@ -635,6 +470,41 @@ divmod_ dividend divisor qAcc prevR =
             divmod_ ds divisor qAcc_ rem
 
 
+headAndTail : Integer -> ( Integer, Integer )
+headAndTail i =
+    case i of
+        Zero ->
+            ( Zero, Zero )
+
+        Integer s m ->
+            let
+                rM =
+                    List.reverse m
+            in
+                case rM of
+                    [] ->
+                        ( Zero, Zero )
+
+                    rd :: [] ->
+                        ( fromInt rd, Zero )
+
+                    rd :: rds ->
+                        ( fromInt rd, Integer s (List.reverse rds) )
+
+
+shiftRightBy : Int -> Integer -> Integer
+shiftRightBy n i =
+    case i of
+        Zero ->
+            Zero
+
+        Integer s m ->
+            if n <= 0 then
+                i
+            else
+                shiftRightBy (n - 1) (Integer s (0 :: m))
+
+
 divmodHelper : Integer -> Integer -> Digit -> Integer -> ( Integer, Integer )
 divmodHelper dividend divisor normalizer acc =
     case compare dividend divisor of
@@ -698,22 +568,120 @@ trimLeadingZero s =
         |> String.reverse
 
 
+negate : Integer -> Integer
+negate i =
+    case i of
+        Zero ->
+            Zero
 
-{-
-   toString :
-   1. convert to base10
-   2. concat string
+        Integer s m ->
+            Integer (negateSign s) m
 
-   toString : Integer -> String
-   toString i =
-       i
-       |> convertToBase10
-       |> concatString
 
-   convertToBase10 : Integer -> Integer
-   convertToBase10 i =
-       case i of
-           Zero -> Zero
-           Integer s m ->
+abs : Integer -> Integer
+abs i =
+    case i of
+        Zero ->
+            Zero
 
--}
+        Integer Positive _ ->
+            i
+
+        Integer Negative m ->
+            Integer Positive m
+
+
+compare : Integer -> Integer -> Order
+compare i1 i2 =
+    case ( i1, i2 ) of
+        ( Zero, Zero ) ->
+            EQ
+
+        ( Zero, Integer Positive _ ) ->
+            LT
+
+        ( Zero, Integer Negative _ ) ->
+            GT
+
+        ( Integer Positive _, Zero ) ->
+            GT
+
+        ( Integer Negative _, Zero ) ->
+            LT
+
+        ( Integer Positive _, Integer Negative _ ) ->
+            GT
+
+        ( Integer Negative _, Integer Positive _ ) ->
+            LT
+
+        ( Integer _ m1, Integer _ m2 ) ->
+            compareMag m1 m2
+
+
+
+-- Shared helper functions
+
+
+compareMag : Magnitude -> Magnitude -> Order
+compareMag m1 m2 =
+    case Basics.compare (List.length m1) (List.length m2) of
+        GT ->
+            GT
+
+        LT ->
+            LT
+
+        EQ ->
+            compareMag_ (List.reverse m1) (List.reverse m2)
+
+
+compareMag_ : Magnitude -> Magnitude -> Order
+compareMag_ m1 m2 =
+    case ( m1, m2 ) of
+        ( [], [] ) ->
+            EQ
+
+        ( d :: ds, [] ) ->
+            GT
+
+        ( [], d :: ds ) ->
+            LT
+
+        ( d1 :: ds1, d2 :: ds2 ) ->
+            case Basics.compare d1 d2 of
+                GT ->
+                    GT
+
+                EQ ->
+                    compareMag_ ds1 ds2
+
+                LT ->
+                    LT
+
+
+negateSign : Sign -> Sign
+negateSign s =
+    case s of
+        Positive ->
+            Negative
+
+        Negative ->
+            Positive
+
+
+removeLeadingZero : Magnitude -> Magnitude
+removeLeadingZero m =
+    dropWhileEnd ((==) 0) (List.reverse m)
+
+
+dropWhileEnd : (a -> Bool) -> List a -> List a
+dropWhileEnd p =
+    List.foldr
+        (\x xs ->
+            if p x && List.isEmpty xs then
+                []
+            else
+                x :: xs
+        )
+        []
