@@ -14,6 +14,8 @@ module BigNum
         , rem
         , safeRem
         , compare
+        , toString
+        , fromString
         )
 
 
@@ -55,6 +57,64 @@ fromInt i =
 
         LT ->
             Integer Negative (magnitudeFromInt (Basics.abs i))
+
+
+fromString : String -> Maybe Integer
+fromString s =
+    if String.startsWith "-" s then
+        let
+            s_ =
+                String.dropLeft 1 s
+
+            m =
+                magnitudeFromString s_
+        in
+            Maybe.map (Integer Negative) m
+    else
+        let
+            m =
+                magnitudeFromString s
+        in
+            Maybe.map (Integer Positive) m
+
+
+magnitudeFromString : String -> Maybe Magnitude
+magnitudeFromString s =
+    s
+        |> String.reverse
+        |> splitBy 7 []
+        |> List.map String.reverse
+        |> List.map (String.toInt >> Result.toMaybe)
+        |> combine
+
+
+combine : List (Maybe Int) -> Maybe (List Int)
+combine =
+    List.foldl
+        (\x acc ->
+            case x of
+                Nothing ->
+                    Nothing
+
+                Just i ->
+                    Maybe.map ((::) i) acc
+        )
+        (Just [])
+
+
+splitBy : Int -> List String -> String -> List String
+splitBy n acc s =
+    if s == "" then
+        acc
+    else
+        let
+            chunk =
+                String.left n s
+
+            rest =
+                String.dropLeft n s
+        in
+            splitBy n (chunk :: acc) rest
 
 
 magnitudeFromInt : Int -> Magnitude
@@ -598,6 +658,44 @@ divmodHelper dividend divisor normalizer acc =
                             sub dividend (mul divisor (fromInt normalizer))
                     in
                         divmodHelper dividend_ divisor normalizer (add acc (fromInt normalizer))
+
+
+toString : Integer -> String
+toString i =
+    case i of
+        Zero ->
+            "0"
+
+        Integer s m ->
+            let
+                sign =
+                    if s == Negative then
+                        "-"
+                    else
+                        ""
+
+                num =
+                    m
+                        |> List.map Basics.toString
+                        |> List.map (String.padLeft 7 '0')
+                        |> List.foldl (++) ""
+                        |> trimLeadingZero
+            in
+                sign ++ num
+
+
+trimLeadingZero : String -> String
+trimLeadingZero s =
+    String.foldl
+        (\c cs ->
+            if c == '0' && cs == "" then
+                ""
+            else
+                String.cons c cs
+        )
+        ""
+        s
+        |> String.reverse
 
 
 
