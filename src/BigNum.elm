@@ -15,6 +15,11 @@ module BigNum
         , abs
         , negate
         , compare
+        , lt
+        , lte
+        , gt
+        , gte
+        , eq
         , toString
         )
 
@@ -617,6 +622,62 @@ compare i1 i2 =
 
         ( Integer _ m1, Integer _ m2 ) ->
             compareMag m1 m2
+
+
+lt : Integer -> Integer -> Bool
+lt i1 i2 =
+    case compare i1 i2 of
+        LT ->
+            True
+
+        _ ->
+            False
+
+
+gt : Integer -> Integer -> Bool
+gt i1 i2 =
+    case compare i1 i2 of
+        GT ->
+            True
+
+        _ ->
+            False
+
+
+lte : Integer -> Integer -> Bool
+lte i1 i2 =
+    case compare i1 i2 of
+        LT ->
+            True
+
+        EQ ->
+            True
+
+        _ ->
+            False
+
+
+gte : Integer -> Integer -> Bool
+gte i1 i2 =
+    case compare i1 i2 of
+        GT ->
+            True
+
+        EQ ->
+            True
+
+        _ ->
+            False
+
+
+eq : Integer -> Integer -> Bool
+eq i1 i2 =
+    case compare i1 i2 of
+        EQ ->
+            True
+
+        _ ->
+            False
 
 
 
