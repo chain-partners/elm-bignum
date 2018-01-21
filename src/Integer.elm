@@ -1,4 +1,4 @@
-module BigNum
+module Integer
     exposing
         ( Integer
         , fromInt
@@ -535,6 +535,10 @@ divmodHelper dividend divisor normalizer acc =
                         divmodHelper dividend_ divisor normalizer (add acc (fromInt normalizer))
 
 
+
+-- String representation
+
+
 toString : Integer -> String
 toString i =
     case i of
@@ -573,6 +577,10 @@ trimLeadingZero s =
         |> String.reverse
 
 
+
+-- Sign modification functions
+
+
 negate : Integer -> Integer
 negate i =
     case i of
@@ -594,6 +602,10 @@ abs i =
 
         Integer Negative m ->
             Integer Positive m
+
+
+
+-- Comparison functions
 
 
 compare : Integer -> Integer -> Order

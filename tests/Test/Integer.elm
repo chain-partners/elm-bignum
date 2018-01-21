@@ -1,14 +1,14 @@
-module Test.BigNum exposing (..)
+module Test.Integer exposing (..)
 
 import Expect exposing (Expectation)
 import Fuzz exposing (Fuzzer, int, list, string)
 import Test exposing (..)
-import BigNum exposing (..)
+import Integer exposing (..)
 
 
 suite : Test
 suite =
-    describe "BigNum module"
+    describe "Integer module"
         [ describe "add"
             [ test "should have transitivity property" <|
                 \_ ->
