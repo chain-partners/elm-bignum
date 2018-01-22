@@ -1,6 +1,19 @@
-module Decimal exposing (Decimal, fromInt, fromInteger)
+module Decimal
+    exposing
+        ( fromInt
+        , fromInteger
+        , fromFloat
+        , fromString
+        , toString
+        , add
+        , sub
+        , mul
+        , negate
+        )
 
 import Integer exposing (Integer)
+import Char
+import Regex
 
 
 -- Types
@@ -86,6 +99,111 @@ countInsignificantFiguresFromInteger i acc =
             countInsignificantFiguresFromInteger (Integer.div i ten) (acc + 1)
         else
             acc
+
+
+fromString : String -> Maybe Decimal
+fromString s =
+    s
+        |> validateString
+        |> Maybe.andThen parseString
+
+
+validateString : String -> Maybe String
+validateString s =
+    let
+        validateSign : String -> Bool
+        validateSign s =
+            Regex.contains (Regex.regex "[0-9]|-") (String.left 1 s)
+
+        isSeparator : Char -> Bool
+        isSeparator c =
+            c == '.' || c == ','
+
+        validateSeparator : String -> Bool
+        validateSeparator s =
+            (s |> String.filter isSeparator |> String.length) <= 1
+
+        validateDigits : String -> Bool
+        validateDigits s =
+            String.all (\c -> isSeparator c || Char.isDigit c || c == '-') s
+    in
+        if validateSign s && validateDigits s && validateSeparator s then
+            Just s
+        else
+            Nothing
+
+
+parseString : String -> Maybe Decimal
+parseString s =
+    let
+        separator =
+            String.filter (\c -> c == '.' || c == ',') s
+    in
+        if String.isEmpty separator then
+            Maybe.map2 Decimal (Integer.fromString s) (Just 0)
+        else
+            let
+                iAndF =
+                    String.split separator s
+
+                i =
+                    List.head iAndF
+
+                f =
+                    iAndF |> List.tail >> Maybe.andThen List.head
+
+                i_ =
+                    Maybe.map2 (++) i f
+                        |> Maybe.andThen Integer.fromString
+
+                e =
+                    Maybe.map (String.length >> Basics.negate) f
+            in
+                Maybe.map2 Decimal i_ e
+
+
+fromFloat : Float -> Decimal
+fromFloat f =
+    f
+        |> Basics.toString
+        |> fromString
+        |> Maybe.withDefault Zero
+
+
+toString : Decimal -> String
+toString d =
+    case d of
+        Zero ->
+            "0"
+
+        Decimal i e ->
+            applyExponent (Integer.toString i) e
+
+
+applyExponent : String -> Int -> String
+applyExponent s e =
+    case compare e 0 of
+        GT ->
+            s ++ (String.repeat e "0")
+
+        EQ ->
+            s
+
+        LT ->
+            let
+                i =
+                    String.dropRight (Basics.abs e) s
+
+                i_ =
+                    if String.isEmpty i then
+                        "0"
+                    else
+                        i
+
+                f =
+                    String.right (Basics.abs e) s
+            in
+                i_ ++ "." ++ f
 
 
 
