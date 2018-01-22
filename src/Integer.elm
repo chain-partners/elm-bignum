@@ -160,19 +160,14 @@ add i1 i2 =
         ( _, Zero ) ->
             i1
 
+        ( Integer Positive m1, Integer Negative m2 ) ->
+            sub i1 (abs i2)
+
+        ( Integer Negative m1, Integer Positive m2 ) ->
+            sub i2 (abs i1)
+
         ( Integer s1 m1, Integer s2 m2 ) ->
-            if s1 == s2 then
-                Integer s1 (addMagsWithCarry m1 m2 [] 0)
-            else
-                case compareMag m1 m2 of
-                    GT ->
-                        sub i1 i2
-
-                    EQ ->
-                        Zero
-
-                    LT ->
-                        sub i2 i1
+            Integer s1 (addMagsWithCarry m1 m2 [] 0)
 
 
 addMagsWithCarry : Magnitude -> Magnitude -> Magnitude -> Digit -> Magnitude
