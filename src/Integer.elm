@@ -428,6 +428,12 @@ safeDivmod dividend divisor =
         ( _, Zero ) ->
             Nothing
 
+        ( _, Integer Positive [ 1 ] ) ->
+            Just ( dividend, Zero )
+
+        ( _, Integer Negative [ 1 ] ) ->
+            Just ( negate dividend, Zero )
+
         ( Integer s1 m1, Integer s2 m2 ) ->
             case compareMag m1 m2 of
                 LT ->
@@ -444,16 +450,24 @@ safeDivmod dividend divisor =
                         Just ( Integer sign [ 1 ], Zero )
 
                 GT ->
-                    let
-                        adjustRemainder : Integer -> Integer -> Integer
-                        adjustRemainder divisor rem =
-                            if s1 == s2 then
-                                rem
-                            else
-                                add (abs divisor) rem
-                    in
-                        divmod_ (abs dividend) (abs divisor) Zero Zero
-                            |> Maybe.map (Tuple.mapSecond (adjustRemainder divisor))
+                    divmod_ (abs dividend) (abs divisor) Zero Zero
+                        |> Maybe.map (adjustSign dividend divisor)
+
+
+adjustSign : Integer -> Integer -> ( Integer, Integer ) -> ( Integer, Integer )
+adjustSign dividend divisor ( q, r ) =
+    case ( getSign dividend, getSign divisor ) of
+        ( Positive, Positive ) ->
+            ( q, r )
+
+        ( Positive, Negative ) ->
+            ( negate q, r )
+
+        ( Negative, Positive ) ->
+            ( negate q, negate r )
+
+        ( Negative, Negative ) ->
+            ( q, negate r )
 
 
 divmod : Integer -> Integer -> ( Integer, Integer )
@@ -464,23 +478,25 @@ divmod dividend divisor =
 
 divmod_ : Integer -> Integer -> Integer -> Integer -> Maybe ( Integer, Integer )
 divmod_ dividend divisor qAcc prevR =
-    if dividend == Zero then
-        Just ( qAcc, prevR )
-    else
-        let
-            ( d, ds ) =
-                headAndTail dividend
+    case ( dividend, divisor ) of
+        ( Zero, _ ) ->
+            Just ( qAcc, prevR )
 
-            dividend_ =
-                add d (shiftRightBy 1 prevR)
+        _ ->
+            let
+                ( d, ds ) =
+                    headAndTail dividend
 
-            ( q, rem ) =
-                divmodHelper dividend_ divisor maxBase Zero
+                dividend_ =
+                    add d (shiftRightBy 1 prevR)
 
-            qAcc_ =
-                add q (shiftRightBy 1 qAcc)
-        in
-            divmod_ ds divisor qAcc_ rem
+                ( q, rem ) =
+                    divmodHelper dividend_ divisor maxBase Zero
+
+                qAcc_ =
+                    add q (shiftRightBy 1 qAcc)
+            in
+                divmod_ ds divisor qAcc_ rem
 
 
 headAndTail : Integer -> ( Integer, Integer )
@@ -766,3 +782,13 @@ dropWhileEnd p =
                 x :: xs
         )
         []
+
+
+getSign : Integer -> Sign
+getSign i =
+    case i of
+        Integer Negative _ ->
+            Negative
+
+        _ ->
+            Positive

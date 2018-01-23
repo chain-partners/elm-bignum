@@ -17,6 +17,18 @@ halfMaxIntRange =
     intRange (Basics.negate (2 ^ 26)) (2 ^ 26)
 
 
+nonZeroInt : Fuzzer Int
+nonZeroInt =
+    Fuzz.map
+        (\i ->
+            if i == 0 then
+                1
+            else
+                i
+        )
+        maxIntRange
+
+
 suite : Test
 suite =
     describe "Integer module"
@@ -43,19 +55,16 @@ suite =
                             (fromInt i2)
                         )
                         (Just (fromInt (i1 // i2)))
+            , fuzz2 maxIntRange nonZeroInt "should have same result for divmod as Int" <|
+                \i1 i2 ->
+                    let
+                        intDivmod =
+                            Just ( fromInt (i1 // i2), fromInt (Basics.rem i1 i2) )
 
-            {-
-               , fuzz2 largeInt largeInt "should have same result for divmod as Int" <|
-                   \i1 i2 ->
-                       let
-                           intDivmod =
-                               Just ( fromInt (i1 // i2), fromInt (i1 % i2) )
-
-                           integerDivmod =
-                               safeDivmod (fromInt i1) (fromInt i2)
-                       in
-                           Expect.equal intDivmod integerDivmod
-            -}
+                        integerDivmod =
+                            safeDivmod (fromInt i1) (fromInt i2)
+                    in
+                        Expect.equal intDivmod integerDivmod
             ]
         , describe "add"
             [ test "should have transitivity property" <|
