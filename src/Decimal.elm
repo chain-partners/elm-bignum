@@ -1,6 +1,7 @@
 module Decimal
     exposing
-        ( fromInt
+        ( Decimal
+        , fromInt
         , fromInteger
         , fromFloat
         , fromString
