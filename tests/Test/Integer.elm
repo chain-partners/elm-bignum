@@ -1,15 +1,63 @@
 module Test.Integer exposing (..)
 
 import Expect exposing (Expectation)
-import Fuzz exposing (Fuzzer, int, list, string)
+import Fuzz exposing (Fuzzer, int, list, string, intRange)
+import Random.Pcg as Random
 import Test exposing (..)
 import Integer exposing (..)
+
+
+maxIntRange : Fuzzer Int
+maxIntRange =
+    intRange Random.minInt Random.maxInt
+
+
+halfMaxIntRange : Fuzzer Int
+halfMaxIntRange =
+    intRange (Basics.negate (2 ^ 26)) (2 ^ 26)
 
 
 suite : Test
 suite =
     describe "Integer module"
-        [ describe "add"
+        [ describe "fromInt"
+            [ fuzz maxIntRange "should have correct sign as Int" <|
+                \i ->
+                    Expect.equal (Integer.compare (fromInt i) (fromInt 0)) (Basics.compare i 0)
+            , fuzz maxIntRange "should have same string representation as Int" <|
+                \i ->
+                    Expect.equal (Integer.toString << fromInt <| i) (Basics.toString i)
+            , fuzz2 maxIntRange maxIntRange "should have same result for addition as Int" <|
+                \i1 i2 ->
+                    Expect.equal (add (fromInt i1) (fromInt i2)) (fromInt (i1 + i2))
+            , fuzz2 maxIntRange maxIntRange "should have same result for subtraction as Int" <|
+                \i1 i2 ->
+                    Expect.equal (sub (fromInt i1) (fromInt i2)) (fromInt (i1 - i2))
+            , fuzz2 halfMaxIntRange halfMaxIntRange "should have same result for multiplication as Int" <|
+                \i1 i2 ->
+                    Expect.equal (mul (fromInt i1) (fromInt i2)) (fromInt (i1 * i2))
+            , fuzz2 maxIntRange maxIntRange "should have same result for division as Int" <|
+                \i1 i2 ->
+                    Expect.equal
+                        (safeDiv (fromInt i1)
+                            (fromInt i2)
+                        )
+                        (Just (fromInt (i1 // i2)))
+
+            {-
+               , fuzz2 largeInt largeInt "should have same result for divmod as Int" <|
+                   \i1 i2 ->
+                       let
+                           intDivmod =
+                               Just ( fromInt (i1 // i2), fromInt (i1 % i2) )
+
+                           integerDivmod =
+                               safeDivmod (fromInt i1) (fromInt i2)
+                       in
+                           Expect.equal intDivmod integerDivmod
+            -}
+            ]
+        , describe "add"
             [ test "should have transitivity property" <|
                 \_ ->
                     let
