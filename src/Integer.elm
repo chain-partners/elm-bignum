@@ -48,6 +48,10 @@ type alias Magnitude =
     List Digit
 
 
+type alias BigEndianMagnitude =
+    List Digit
+
+
 
 -- Constants
 
@@ -440,7 +444,16 @@ safeDivmod dividend divisor =
                         Just ( Integer sign [ 1 ], Zero )
 
                 GT ->
-                    divmod_ dividend divisor Zero Zero
+                    let
+                        adjustRemainder : Integer -> Integer -> Integer
+                        adjustRemainder divisor rem =
+                            if s1 == s2 then
+                                rem
+                            else
+                                add (abs divisor) rem
+                    in
+                        divmod_ (abs dividend) (abs divisor) Zero Zero
+                            |> Maybe.map (Tuple.mapSecond (adjustRemainder divisor))
 
 
 divmod : Integer -> Integer -> ( Integer, Integer )
