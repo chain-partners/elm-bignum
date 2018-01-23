@@ -656,8 +656,28 @@ compare i1 i2 =
         ( Integer Negative _, Integer Positive _ ) ->
             LT
 
-        ( Integer _ m1, Integer _ m2 ) ->
-            compareMag m1 m2
+        ( Integer s1 m1, Integer s2 m2 ) ->
+            let
+                ord =
+                    compareMag m1 m2
+            in
+                if s1 == Negative && s2 == Negative then
+                    reverseOrder ord
+                else
+                    ord
+
+
+reverseOrder : Order -> Order
+reverseOrder o =
+    case o of
+        GT ->
+            LT
+
+        EQ ->
+            EQ
+
+        LT ->
+            GT
 
 
 lt : Integer -> Integer -> Bool

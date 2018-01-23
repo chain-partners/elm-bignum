@@ -1,10 +1,50 @@
 module Test.Integer exposing (..)
 
 import Expect exposing (Expectation)
-import Fuzz exposing (Fuzzer, int, list, string, intRange)
+import Fuzz exposing (Fuzzer, int, intRange, custom)
 import Random.Pcg as Random
 import Test exposing (..)
 import Integer exposing (..)
+import Shrink
+import Lazy.List exposing (empty, (:::))
+
+
+intString : Fuzzer String
+intString =
+    let
+        -- Genrates string between 10 ^ 42 and 10 ^ 50
+        num =
+            Random.list 5 (Random.int 0 Random.maxInt)
+                |> Random.map (List.map Basics.toString)
+                |> Random.map (List.foldr (++) "")
+
+        sign =
+            Random.choice "" "-"
+
+        generator =
+            Random.map2 (++) sign num
+
+        baseInts =
+            List.range -9 9
+                |> List.map Basics.toString
+
+        shrinker generator =
+            if List.member generator baseInts then
+                empty
+            else
+                (String.dropRight 1 generator) ::: empty
+    in
+        custom generator shrinker
+
+
+join : Maybe (Maybe a) -> Maybe a
+join mx =
+    case mx of
+        Just x ->
+            x
+
+        Nothing ->
+            Nothing
 
 
 maxIntRange : Fuzzer Int
@@ -66,217 +106,241 @@ suite =
                     in
                         Expect.equal intDivmod integerDivmod
             ]
+        , describe "fromString and toString"
+            [ fuzz intString "should be inverse functions" <|
+                \i -> Expect.equal ((Maybe.map Integer.toString) (fromString i)) (Just i)
+            ]
         , describe "add"
-            [ test "should have transitivity property" <|
-                \_ ->
+            [ fuzz2 intString intString "should have transitivity property" <|
+                \i1 i2 ->
                     let
                         a =
-                            fromInt (2 ^ 50 - 7128937)
+                            fromString i1
 
                         b =
-                            fromInt (2 ^ 20 + 17171111)
+                            fromString i2
                     in
-                        Expect.equal (add a b) (add b a)
-            , test "should have associativity property" <|
-                \_ ->
+                        Expect.equal (Maybe.map2 add a b) (Maybe.map2 add b a)
+            , fuzz3 intString intString intString "should have associativity property" <|
+                \i1 i2 i3 ->
                     let
                         a =
-                            fromInt (2 ^ 50 - 25222523)
+                            fromString i1
 
                         b =
-                            fromInt (2 ^ 49 + 123134)
+                            fromString i2
 
                         c =
-                            fromInt (2 ^ 16 - 77859)
+                            fromString i3
                     in
-                        Expect.equal (add (add a b) c) (add a (add b c))
-            , test "should have identity property" <|
-                \_ ->
+                        Expect.equal (Maybe.map2 add (Maybe.map2 add a b) c)
+                            (Maybe.map2 add
+                                a
+                                (Maybe.map2 add b c)
+                            )
+            , fuzz intString "should have identity property" <|
+                \i ->
                     let
                         a =
-                            fromInt (2 ^ 48 + 812381)
+                            fromString i
 
                         b =
                             fromInt 0
                     in
-                        Expect.equal (add a b) a
-            , test "should have distributive property" <|
-                \_ ->
+                        Expect.equal (Maybe.map (add b) a) a
+            , fuzz3 intString intString intString "should have distributive property" <|
+                \i1 i2 i3 ->
                     let
                         a =
-                            fromInt (2 ^ 36 - 188111)
+                            fromString i1
 
                         b =
-                            fromInt (Basics.negate (2 ^ 15 - 7333))
+                            fromString i2
 
                         c =
-                            fromInt (2 ^ 22 + 7221)
+                            fromString i3
                     in
-                        Expect.equal (mul a (add b c)) (add (mul a b) (mul a c))
+                        Expect.equal (Maybe.map2 mul a (Maybe.map2 add b c))
+                            (Maybe.map2 add
+                                (Maybe.map2 mul a b)
+                                (Maybe.map2 mul a c)
+                            )
             ]
         , describe "sub"
-            [ test "should have identity property" <|
-                \_ ->
+            [ fuzz intString "should have identity property" <|
+                \i ->
                     let
                         a =
-                            (fromInt (Basics.negate (2 ^ 50 + 32)))
+                            fromString i
 
                         b =
-                            fromInt 0
+                            Just (fromInt 0)
                     in
-                        Expect.equal (sub a b) a
-            , test "should have inverse" <|
-                \_ ->
+                        Expect.equal (Maybe.map2 sub a b) a
+            , fuzz intString "should have inverse" <|
+                \i ->
                     let
                         a =
-                            fromInt ((2 ^ 44) * 3)
+                            fromString i
 
                         b =
-                            fromInt 0
+                            Just (fromInt 0)
                     in
-                        Expect.equal (sub a a) b
+                        Expect.equal (Maybe.map2 sub a a) b
             ]
         , describe "mul"
-            [ test "should have transitivity property" <|
-                \_ ->
+            [ fuzz2 intString intString "should have transitivity property" <|
+                \i1 i2 ->
                     let
                         a =
-                            fromInt (2 ^ 50 - 7128937)
+                            fromString i1
 
                         b =
-                            fromInt (2 ^ 20 + 17171111)
+                            fromString i2
                     in
-                        Expect.equal (mul a b) (mul b a)
-            , test "should have associativity property" <|
-                \_ ->
+                        Expect.equal (Maybe.map2 mul a b) (Maybe.map2 mul b a)
+            , fuzz3 intString intString intString "should have associativity property" <|
+                \i1 i2 i3 ->
                     let
                         a =
-                            fromInt (2 ^ 50 - 25222523)
+                            fromString i1
 
                         b =
-                            fromInt (2 ^ 49 + 123134)
+                            fromString i3
 
                         c =
-                            fromInt (2 ^ 16 - 77859)
+                            fromString i3
                     in
-                        Expect.equal (mul (mul a b) c) (mul a (mul b c))
-            , test "should have identity property" <|
-                \_ ->
+                        Expect.equal (Maybe.map2 mul (Maybe.map2 mul a b) c)
+                            (Maybe.map2 mul
+                                a
+                                (Maybe.map2 mul b c)
+                            )
+            , fuzz intString "should have identity property" <|
+                \i ->
                     let
                         a =
-                            fromInt (2 ^ 48 + 812381)
+                            fromString i
 
                         b =
                             fromInt 1
                     in
-                        Expect.equal (mul a b) a
-            , test "should have distributive property" <|
-                \_ ->
+                        Expect.equal (Maybe.map (mul b) a) a
+            , fuzz3 intString intString intString "should have distributive property" <|
+                \i1 i2 i3 ->
                     let
                         a =
-                            fromInt (2 ^ 36 - 188111)
+                            fromString i1
 
                         b =
-                            fromInt (Basics.negate (2 ^ 15 - 7333))
+                            fromString i2
 
                         c =
-                            fromInt (2 ^ 22 + 7221)
+                            fromString i3
                     in
-                        Expect.equal (mul a (add b c)) (add (mul a b) (mul a c))
+                        Expect.equal (Maybe.map2 mul a (Maybe.map2 add b c))
+                            (Maybe.map2 add
+                                (Maybe.map2 mul a b)
+                                (Maybe.map2 mul a c)
+                            )
             ]
-        , describe "div"
-            [ test "should have identity property" <|
-                \_ ->
+        , describe "safeDivmod"
+            [ fuzz intString "should have identity property" <|
+                \i ->
                     let
                         a =
-                            fromInt (2 ^ 50 - 7128937)
+                            fromString i
 
                         b =
-                            fromInt 1
+                            Just (fromInt 1)
+
+                        expected =
+                            Maybe.map2 (,) a (Just (fromInt 0))
                     in
-                        Expect.equal (div a b) a
-            , describe "should have zero property"
-                [ test "dividing zero yields zero" <|
-                    \_ ->
+                        Expect.equal (join (Maybe.map2 safeDivmod a b)) expected
+            , describe "should have zero-related properties"
+                [ fuzz intString "dividing zero yields zero" <|
+                    \i ->
                         let
                             a =
-                                fromInt (2 ^ 35 + 8172811)
+                                fromString i
 
                             b =
                                 fromInt 0
                         in
-                            Expect.equal (div b a) b
-                , test "dividing with zero yields Nothing" <|
-                    \_ ->
+                            Expect.equal (Maybe.andThen (safeDivmod b) a) (Just ( b, b ))
+                , fuzz intString "dividing with zero yields Nothing" <|
+                    \i ->
                         let
                             a =
-                                fromInt (2 ^ 35 + 4113)
+                                fromString i
 
                             b =
-                                fromInt 0
+                                Just (fromInt 0)
                         in
-                            Expect.equal (safeDiv a b) Nothing
+                            Expect.equal (join (Maybe.map2 safeDivmod a b)) Nothing
                 ]
-            , describe "should have distributive property"
-                [ test "should have left-associative distributive property" <|
-                    \_ ->
-                        let
-                            a =
-                                fromInt (2 ^ 50 - 1211223)
+            , fuzz2 intString intString "should produce valid quotient and remainder" <|
+                \i1 i2 ->
+                    let
+                        a =
+                            fromString i1
 
-                            b =
-                                fromInt (2 ^ 33 + 12311)
+                        b =
+                            fromString i2
 
-                            c =
-                                fromInt (2 ^ 20 - 997831)
+                        result =
+                            join (Maybe.map2 safeDivmod a b)
+                    in
+                        case result of
+                            Nothing ->
+                                Expect.fail "was given invalid string for generating Integer"
 
-                            ( aq, ar ) =
-                                divmod a c
+                            Just ( q, r ) ->
+                                Expect.equal (Maybe.map (add r) (Maybe.map (mul q) b)) a
+            ]
+        , describe "abs"
+            [ fuzz intString "abs i should be larger than or equal to i" <|
+                \i ->
+                    case (Maybe.map2 gte (Maybe.map Integer.abs (fromString i)) (fromString i)) of
+                        Just True ->
+                            Expect.pass
 
-                            ( bq, br ) =
-                                divmod b c
+                        _ ->
+                            Expect.fail "property does not hold"
+            ]
+        , describe "negate"
+            [ fuzz intString "should return original i when applied twice" <|
+                \i ->
+                    let
+                        integer =
+                            fromString i
 
-                            sumq =
-                                add aq bq
+                        integer_ =
+                            integer
+                                |> Maybe.map Integer.negate
+                                |> Maybe.map Integer.negate
+                    in
+                        Expect.equal integer integer_
+            ]
+        , describe "compare"
+            [ fuzz2 intString intString "should return correct order" <|
+                \i1 i2 ->
+                    let
+                        a =
+                            fromString i1
 
-                            sumr =
-                                add ar br
+                        b =
+                            fromString i2
 
-                            ( sumr_carry, sumr_r ) =
-                                divmod sumr c
-                        in
-                            Expect.equal (divmod (add a b) c) ( add sumq sumr_carry, sumr_r )
-                , test "should not have right-associative distributive property" <|
-                    \_ ->
-                        let
-                            a =
-                                fromInt (2 ^ 20 + 3335)
+                        comparison =
+                            Maybe.map2 Integer.compare a b
+                    in
+                        case comparison of
+                            Nothing ->
+                                Expect.fail "was given invalid string for generating Integer"
 
-                            b =
-                                fromInt (2 ^ 25 - 8311)
-
-                            c =
-                                fromInt (2 ^ 5 + 3)
-
-                            ( acq, acr ) =
-                                divmod a c
-
-                            ( abq, abr ) =
-                                divmod a b
-
-                            ( q, r ) =
-                                divmod a (add b c)
-
-                            sumq =
-                                add acq abq
-
-                            sumr =
-                                add abr acr
-
-                            ( sumr_carry, sumr_r ) =
-                                divmod sumr a
-                        in
-                            Expect.notEqual ( q, r ) ( add sumq sumr_carry, sumr_r )
-                ]
+                            _ ->
+                                Expect.equal (Maybe.map2 Integer.compare (Maybe.map2 sub a b) (Just (fromInt 0))) comparison
             ]
         ]
