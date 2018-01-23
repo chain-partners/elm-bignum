@@ -12,7 +12,7 @@ import Lazy.List exposing (empty, (:::))
 intString : Fuzzer String
 intString =
     let
-        -- Genrates string between 10 ^ 42 and 10 ^ 50
+        -- Generates string between 10 ^ 42 and 10 ^ 50
         num =
             Random.list 5 (Random.int 0 Random.maxInt)
                 |> Random.map (List.map Basics.toString)
