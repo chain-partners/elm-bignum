@@ -10,6 +10,8 @@ module Decimal
         , sub
         , mul
         , negate
+        , trimTrailingZero
+        , compare
         )
 
 import Integer exposing (Integer)
@@ -40,29 +42,29 @@ type Decimal
 fromInt : Int -> Decimal
 fromInt i =
     let
-        insigFigs =
-            countInsignificantFiguresFromInt i 0
+        ( s, e ) =
+            getSignificandAndExponent ( i, 0 )
 
-        i_ =
-            i // (10 ^ insigFigs)
-
-        significand =
-            Integer.fromInt i_
-
-        e =
-            insigFigs
+        integer =
+            Integer.fromInt s
     in
-        Decimal significand e
+        if integer == (Integer.fromInt 0) then
+            Zero
+        else
+            Decimal integer e
 
 
-countInsignificantFiguresFromInt : Int -> Int -> Int
-countInsignificantFiguresFromInt i acc =
-    case rem i 10 of
-        0 ->
-            countInsignificantFiguresFromInt (i // 10) (acc + 1)
+getSignificandAndExponent : ( Int, Int ) -> ( Int, Int )
+getSignificandAndExponent ( i, e ) =
+    case ( i // 10, rem i 10 ) of
+        ( 0, 0 ) ->
+            ( i, e )
+
+        ( _, 0 ) ->
+            getSignificandAndExponent ( i // 10, e + 1 )
 
         _ ->
-            acc
+            ( i, e )
 
 
 fromInteger : Integer -> Decimal
@@ -154,14 +156,17 @@ parseString s =
 
             Just index ->
                 let
+                    s_ =
+                        trimTrailingZero s
+
                     e =
-                        s
-                            |> String.dropLeft index
+                        s_
+                            |> String.dropLeft (index + 1)
                             |> String.length
                             |> Basics.negate
 
                     i =
-                        s
+                        s_
                             |> String.filter (isSeparator >> not)
                             |> Integer.fromString
                 in
@@ -169,6 +174,18 @@ parseString s =
                         Just Zero
                     else
                         Maybe.map ((flip Decimal) e) i
+
+
+trimTrailingZero : String -> String
+trimTrailingZero =
+    String.foldr
+        (\c cs ->
+            if c == '0' && cs == "" then
+                ""
+            else
+                String.cons c cs
+        )
+        ""
 
 
 fromFloat : Float -> Decimal
@@ -191,7 +208,7 @@ toString d =
 
 applyExponent : String -> Int -> String
 applyExponent s e =
-    case compare e 0 of
+    case Basics.compare e 0 of
         GT ->
             s ++ (String.repeat e "0")
 
@@ -200,19 +217,21 @@ applyExponent s e =
 
         LT ->
             let
-                i =
-                    String.dropRight (Basics.abs e) s
+                e_ =
+                    Basics.abs e
 
-                i_ =
-                    if String.isEmpty i then
-                        "0"
-                    else
-                        i
+                ( i, f ) =
+                    case Basics.compare (String.length s) e_ of
+                        GT ->
+                            ( String.dropRight e_ s, String.right e_ s )
 
-                f =
-                    String.right (Basics.abs e) s
+                        EQ ->
+                            ( "0", s )
+
+                        LT ->
+                            ( "0", String.padLeft e_ '0' s )
             in
-                i_ ++ "." ++ f
+                i ++ "." ++ f
 
 
 
@@ -303,3 +322,37 @@ negate d =
 
         Decimal s e ->
             Decimal (Integer.negate s) e
+
+
+abs : Decimal -> Decimal
+abs d =
+    case d of
+        Zero ->
+            Zero
+
+        Decimal s e ->
+            Decimal (Integer.negate s) e
+
+
+compare : Decimal -> Decimal -> Order
+compare d1 d2 =
+    case ( d1, d2 ) of
+        ( Zero, Zero ) ->
+            EQ
+
+        ( Decimal s e, Zero ) ->
+            Integer.compare s (Integer.fromInt 0)
+
+        ( Zero, Decimal s e ) ->
+            Integer.compare (Integer.fromInt 0) s
+
+        ( Decimal s1 e1, Decimal s2 e2 ) ->
+            case Basics.compare e1 e2 of
+                GT ->
+                    Integer.compare (Integer.mul s1 (Integer.fromInt (10 ^ (e1 - e2)))) s2
+
+                EQ ->
+                    Integer.compare s1 s2
+
+                LT ->
+                    Integer.compare s1 (Integer.mul s2 (Integer.fromInt (10 ^ (e2 - e1))))
