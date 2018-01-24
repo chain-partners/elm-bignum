@@ -11,7 +11,13 @@ module Decimal
         , mul
         , negate
         , trimTrailingZero
+        , abs
         , compare
+        , lt
+        , lte
+        , gt
+        , gte
+        , eq
         )
 
 import Integer exposing (Integer)
@@ -331,7 +337,7 @@ abs d =
             Zero
 
         Decimal s e ->
-            Decimal (Integer.negate s) e
+            Decimal (Integer.abs s) e
 
 
 compare : Decimal -> Decimal -> Order
@@ -356,3 +362,59 @@ compare d1 d2 =
 
                 LT ->
                     Integer.compare s1 (Integer.mul s2 (Integer.fromInt (10 ^ (e2 - e1))))
+
+
+lt : Decimal -> Decimal -> Bool
+lt i1 i2 =
+    case compare i1 i2 of
+        LT ->
+            True
+
+        _ ->
+            False
+
+
+gt : Decimal -> Decimal -> Bool
+gt i1 i2 =
+    case compare i1 i2 of
+        GT ->
+            True
+
+        _ ->
+            False
+
+
+lte : Decimal -> Decimal -> Bool
+lte i1 i2 =
+    case compare i1 i2 of
+        LT ->
+            True
+
+        EQ ->
+            True
+
+        _ ->
+            False
+
+
+gte : Decimal -> Decimal -> Bool
+gte i1 i2 =
+    case compare i1 i2 of
+        GT ->
+            True
+
+        EQ ->
+            True
+
+        _ ->
+            False
+
+
+eq : Decimal -> Decimal -> Bool
+eq i1 i2 =
+    case compare i1 i2 of
+        EQ ->
+            True
+
+        _ ->
+            False
