@@ -142,4 +142,191 @@ suite =
                 \f ->
                     Expect.equal (Maybe.map Decimal.toString << fromString <| f) (Just f)
             ]
+        , describe "add"
+            [ fuzz2 floatString floatString "should have transitivity property" <|
+                \f1 f2 ->
+                    let
+                        a =
+                            fromString f1
+
+                        b =
+                            fromString f2
+                    in
+                        Expect.equal (Maybe.map2 add a b) (Maybe.map2 add b a)
+            , fuzz3 floatString floatString floatString "should have associativity property" <|
+                \f1 f2 f3 ->
+                    let
+                        a =
+                            fromString f1
+
+                        b =
+                            fromString f2
+
+                        c =
+                            fromString f3
+                    in
+                        Expect.equal (Maybe.map2 add (Maybe.map2 add a b) c)
+                            (Maybe.map2 add
+                                a
+                                (Maybe.map2 add b c)
+                            )
+            , fuzz floatString "should have identity property" <|
+                \f ->
+                    let
+                        a =
+                            fromString f
+
+                        b =
+                            fromFloat 0
+                    in
+                        Expect.equal (Maybe.map (add b) a) a
+            , fuzz3 floatString floatString floatString "should have distributive property" <|
+                \f1 f2 f3 ->
+                    let
+                        a =
+                            fromString f1
+
+                        b =
+                            fromString f2
+
+                        c =
+                            fromString f3
+                    in
+                        Expect.equal (Maybe.map2 mul a (Maybe.map2 add b c))
+                            (Maybe.map2 add
+                                (Maybe.map2 mul a b)
+                                (Maybe.map2 mul a c)
+                            )
+            ]
+        , describe "sub"
+            [ fuzz floatString "should have identity property" <|
+                \f ->
+                    let
+                        a =
+                            fromString f
+
+                        b =
+                            Just (fromFloat 0)
+                    in
+                        Expect.equal (Maybe.map2 sub a b) a
+            , fuzz floatString "should have inverse" <|
+                \f ->
+                    let
+                        a =
+                            fromString f
+
+                        b =
+                            Just (fromInt 0)
+                    in
+                        Expect.equal (Maybe.map2 sub a a) b
+            ]
+
+        {-
+           , describe "mul"
+               [ fuzz2 floatString floatString "should have transitivity property" <|
+                   \f1 f2 ->
+                       let
+                           a =
+                               fromString f1
+
+                           b =
+                               fromString f2
+                       in
+                           Expect.equal (Maybe.map2 mul a b) (Maybe.map2 mul b a)
+               , fuzz3 floatString floatString floatString "should have associativity property" <|
+                   \f1 f2 f3 ->
+                       let
+                           a =
+                               fromString f1
+
+                           b =
+                               fromString f3
+
+                           c =
+                               fromString f3
+                       in
+                           Expect.equal (Maybe.map2 mul (Maybe.map2 mul a b) c)
+                               (Maybe.map2 mul
+                                   a
+                                   (Maybe.map2 mul b c)
+                               )
+               , fuzz floatString "should have identity property" <|
+                   \f ->
+                       let
+                           a =
+                               fromString f
+
+                           b =
+                               fromFloat 1
+                       in
+                           Expect.equal (Maybe.map (mul b) a) a
+               , fuzz3 floatString floatString floatString "should have distributive property" <|
+                   \f1 f2 f3 ->
+                       let
+                           a =
+                               fromString f1
+
+                           b =
+                               fromString f2
+
+                           c =
+                               fromString f3
+                       in
+                           Expect.equal (Maybe.map2 mul a (Maybe.map2 add b c))
+                               (Maybe.map2 add
+                                   (Maybe.map2 mul a b)
+                                   (Maybe.map2 mul a c)
+                               )
+               ]
+
+        -}
+        {-
+           , describe "abs"
+               [ fuzz floatString "abs i should be larger than or equal to i" <|
+                   \f ->
+                       case (Maybe.map2 gte (Maybe.map Integer.abs (fromString f)) (fromString f)) of
+                           Just True ->
+                               Expect.pass
+
+                           _ ->
+                               Expect.fail "property does not hold"
+               ]
+        -}
+        , describe "negate"
+            [ fuzz floatString "should return original i when applied twice" <|
+                \f ->
+                    let
+                        float =
+                            fromString f
+
+                        float_ =
+                            float
+                                |> Maybe.map Decimal.negate
+                                |> Maybe.map Decimal.negate
+                    in
+                        Expect.equal float float_
+            ]
+
+        {-
+           , describe "compare"
+               [ fuzz2 floatString floatString "should return correct order" <|
+                   \f1 f2 ->
+                       let
+                           a =
+                               fromString f1
+
+                           b =
+                               fromString f2
+
+                           comparison =
+                               Maybe.map2 Integer.compare a b
+                       in
+                           case comparison of
+                               Nothing ->
+                                   Expect.fail "was given invalid string for generating Integer"
+
+                               _ ->
+                                   Expect.equal (Maybe.map2 Integer.compare (Maybe.map2 sub a b) (Just (fromInt 0))) comparison
+               ]
+        -}
         ]

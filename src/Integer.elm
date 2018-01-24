@@ -23,6 +23,9 @@ module Integer
         , toString
         )
 
+import Char
+
+
 -- Types
 
 
@@ -95,21 +98,43 @@ magnitudeFromInt i =
 
 fromString : String -> Maybe Integer
 fromString s =
-    if String.startsWith "-" s then
-        let
-            s_ =
-                String.dropLeft 1 s
+    s
+        |> validateString
+        |> Maybe.andThen fromString_
 
-            m =
-                magnitudeFromString s_
-        in
-            Maybe.map (Integer Negative) m
-    else
-        let
-            m =
-                magnitudeFromString s
-        in
-            Maybe.map (Integer Positive) m
+
+fromString_ : String -> Maybe Integer
+fromString_ s =
+    let
+        ( sign, num ) =
+            if String.startsWith "-" s then
+                ( Negative, s |> String.dropLeft 1 |> trimLeadingZero )
+            else
+                ( Positive, trimLeadingZero s )
+    in
+        if String.isEmpty num then
+            Just Zero
+        else
+            Maybe.map (Integer sign) (magnitudeFromString num)
+
+
+validateString : String -> Maybe String
+validateString s =
+    let
+        hasValidChars : String -> Bool
+        hasValidChars s =
+            String.all (\c -> c == '-' || Char.isDigit c) s
+
+        hasSignAtStart : String -> Bool
+        hasSignAtStart s =
+            (String.indices "-" s)
+                == [ 0 ]
+                || (s |> String.filter (\c -> c == '-') |> String.isEmpty)
+    in
+        if (hasValidChars s) && (hasSignAtStart s) then
+            Just s
+        else
+            Nothing
 
 
 magnitudeFromString : String -> Maybe Magnitude

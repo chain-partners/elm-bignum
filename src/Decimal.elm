@@ -90,23 +90,28 @@ countInsignificantFiguresFromInteger i acc =
         ten =
             Integer.fromInt 10
 
-        i_ =
-            Integer.rem i ten
+        ( q, r ) =
+            Integer.divmod i ten
 
         z =
             Integer.fromInt 0
     in
-        if Integer.eq i_ z then
-            countInsignificantFiguresFromInteger (Integer.div i ten) (acc + 1)
+        if Integer.eq r z then
+            countInsignificantFiguresFromInteger q (acc + 1)
         else
             acc
 
 
 fromString : String -> Maybe Decimal
 fromString s =
-    s
-        |> validateString
-        |> Maybe.andThen parseString
+    case s of
+        "0" ->
+            Just Zero
+
+        _ ->
+            s
+                |> validateString
+                |> Maybe.andThen parseString
 
 
 validateString : String -> Maybe String
@@ -115,10 +120,6 @@ validateString s =
         validateSign : String -> Bool
         validateSign s =
             Regex.contains (Regex.regex "[0-9]|-") (String.left 1 s)
-
-        isSeparator : Char -> Bool
-        isSeparator c =
-            c == '.' || c == ','
 
         validateSeparator : String -> Bool
         validateSeparator s =
@@ -134,33 +135,40 @@ validateString s =
             Nothing
 
 
+isSeparator : Char -> Bool
+isSeparator c =
+    c == '.' || c == ','
+
+
 parseString : String -> Maybe Decimal
 parseString s =
     let
-        separator =
-            String.filter (\c -> c == '.' || c == ',') s
+        sepIndex =
+            (String.indices "." s)
+                ++ (String.indices "," s)
+                |> List.head
     in
-        if String.isEmpty separator then
-            Maybe.map2 Decimal (Integer.fromString s) (Just 0)
-        else
-            let
-                iAndF =
-                    String.split separator s
+        case sepIndex of
+            Nothing ->
+                Maybe.map2 Decimal (Integer.fromString s) (Just 0)
 
-                i =
-                    List.head iAndF
+            Just index ->
+                let
+                    e =
+                        s
+                            |> String.dropLeft index
+                            |> String.length
+                            |> Basics.negate
 
-                f =
-                    iAndF |> List.tail >> Maybe.andThen List.head
-
-                i_ =
-                    Maybe.map2 (++) i f
-                        |> Maybe.andThen Integer.fromString
-
-                e =
-                    Maybe.map (String.length >> Basics.negate) f
-            in
-                Maybe.map2 Decimal i_ e
+                    i =
+                        s
+                            |> String.filter (isSeparator >> not)
+                            |> Integer.fromString
+                in
+                    if i == Just (Integer.fromInt 0) then
+                        Just Zero
+                    else
+                        Maybe.map ((flip Decimal) e) i
 
 
 fromFloat : Float -> Decimal
@@ -222,19 +230,16 @@ add d1 d2 =
 
         ( Decimal s1 e1, Decimal s2 e2 ) ->
             let
-                expDiff =
-                    abs (e1 - e2)
-
                 s =
                     if e1 >= e2 then
-                        Integer.add s1 (Integer.mul s2 (Integer.fromInt (10 ^ expDiff)))
+                        Integer.add s2 (Integer.mul s1 (Integer.fromInt (10 ^ (e1 - e2))))
                     else
-                        Integer.add s2 (Integer.mul s1 (Integer.fromInt (10 ^ expDiff)))
-
-                d_ =
-                    Decimal s (min e1 e2)
+                        Integer.add s1 (Integer.mul s2 (Integer.fromInt (10 ^ (e2 - e1))))
             in
-                renormalizeDecimal d_
+                if s == Integer.fromInt 0 then
+                    Zero
+                else
+                    renormalizeDecimal (Decimal s (min e1 e2))
 
 
 renormalizeDecimal : Decimal -> Decimal
