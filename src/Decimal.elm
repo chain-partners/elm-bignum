@@ -49,7 +49,7 @@ fromInt : Int -> Decimal
 fromInt i =
     let
         ( s, e ) =
-            getSignificandAndExponent ( i, 0 )
+            getSigExpFromInt ( i, 0 )
 
         integer =
             Integer.fromInt s
@@ -60,14 +60,14 @@ fromInt i =
             Decimal integer e
 
 
-getSignificandAndExponent : ( Int, Int ) -> ( Int, Int )
-getSignificandAndExponent ( i, e ) =
+getSigExpFromInt : ( Int, Int ) -> ( Int, Int )
+getSigExpFromInt ( i, e ) =
     case ( i // 10, rem i 10 ) of
         ( 0, 0 ) ->
             ( i, e )
 
         ( _, 0 ) ->
-            getSignificandAndExponent ( i // 10, e + 1 )
+            getSigExpFromInt ( i // 10, e + 1 )
 
         _ ->
             ( i, e )
@@ -83,17 +83,14 @@ fromInteger i =
             Zero
         else
             let
-                insigFigs =
-                    countInsignificantFiguresFromInteger i 0
-
-                i_ =
-                    Integer.div i (Integer.fromInt (10 ^ insigFigs))
+                ( i_, e ) =
+                    getSigExpFromInteger ( i, 0 )
             in
-                Decimal i_ insigFigs
+                Decimal i_ e
 
 
-countInsignificantFiguresFromInteger : Integer -> Int -> Int
-countInsignificantFiguresFromInteger i acc =
+getSigExpFromInteger : ( Integer, Int ) -> ( Integer, Int )
+getSigExpFromInteger ( i, e ) =
     let
         ten =
             Integer.fromInt 10
@@ -104,10 +101,15 @@ countInsignificantFiguresFromInteger i acc =
         z =
             Integer.fromInt 0
     in
-        if Integer.eq r z then
-            countInsignificantFiguresFromInteger q (acc + 1)
-        else
-            acc
+        case ( q == z, r == z ) of
+            ( True, True ) ->
+                ( i, e )
+
+            ( _, True ) ->
+                ( i, e )
+
+            _ ->
+                ( i, e )
 
 
 fromString : String -> Maybe Decimal
@@ -158,7 +160,11 @@ parseString s =
     in
         case sepIndex of
             Nothing ->
-                Maybe.map2 Decimal (Integer.fromString s) (Just 0)
+                let
+                    ( sig, exp ) =
+                        getSigExpFromString s
+                in
+                    Maybe.map2 Decimal (Integer.fromString sig) (Just exp)
 
             Just index ->
                 let
@@ -180,6 +186,18 @@ parseString s =
                         Just Zero
                     else
                         Maybe.map ((flip Decimal) e) i
+
+
+getSigExpFromString : String -> ( String, Int )
+getSigExpFromString =
+    String.foldr
+        (\c ( acc, e ) ->
+            if c == '0' && acc == "" then
+                ( acc, e + 1 )
+            else
+                ( String.cons c acc, e )
+        )
+        ( "", 0 )
 
 
 trimTrailingZero : String -> String
@@ -275,14 +293,8 @@ renormalizeDecimal d =
 
         Decimal s e ->
             let
-                insigFigs =
-                    countInsignificantFiguresFromInteger s 0
-
-                s_ =
-                    Integer.div s (Integer.fromInt (10 ^ insigFigs))
-
-                e_ =
-                    e + insigFigs
+                ( s_, e_ ) =
+                    getSigExpFromInteger ( s, e )
             in
                 Decimal s_ e_
 
