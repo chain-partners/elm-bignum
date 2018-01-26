@@ -51,10 +51,6 @@ type alias Magnitude =
     List Digit
 
 
-type alias BigEndianMagnitude =
-    List Digit
-
-
 
 -- Constants
 
@@ -72,28 +68,31 @@ fromInt : Int -> Integer
 fromInt i =
     case Basics.compare i 0 of
         GT ->
-            Integer Positive (magnitudeFromInt i)
+            Integer Positive (magnitudeFromInt i [])
 
         EQ ->
             Zero
 
         LT ->
-            Integer Negative (magnitudeFromInt (Basics.abs i))
+            Integer Negative (magnitudeFromInt (Basics.abs i) [])
 
 
-magnitudeFromInt : Int -> Magnitude
-magnitudeFromInt i =
-    if i < maxBase then
-        [ i ]
-    else
-        let
-            quotient =
-                i // maxBase
+magnitudeFromInt : Int -> Magnitude -> Magnitude
+magnitudeFromInt i acc =
+    let
+        quotient =
+            i // maxBase
 
-            rem =
-                i % maxBase
-        in
-            rem :: magnitudeFromInt quotient
+        rem =
+            Basics.rem i maxBase
+
+        acc_ =
+            rem :: acc
+    in
+        if quotient == 0 then
+            List.reverse acc_
+        else
+            magnitudeFromInt quotient acc_
 
 
 fromString : String -> Maybe Integer
@@ -101,21 +100,6 @@ fromString s =
     s
         |> validateString
         |> Maybe.andThen fromString_
-
-
-fromString_ : String -> Maybe Integer
-fromString_ s =
-    let
-        ( sign, num ) =
-            if String.startsWith "-" s then
-                ( Negative, s |> String.dropLeft 1 |> trimLeadingZero )
-            else
-                ( Positive, trimLeadingZero s )
-    in
-        if String.isEmpty num then
-            Just Zero
-        else
-            Maybe.map (Integer sign) (magnitudeFromString num)
 
 
 validateString : String -> Maybe String
@@ -137,32 +121,45 @@ validateString s =
             Nothing
 
 
+fromString_ : String -> Maybe Integer
+fromString_ s =
+    let
+        ( sign, num ) =
+            if String.startsWith "-" s then
+                ( Negative, s |> String.dropLeft 1 |> trimLeadingZero )
+            else
+                ( Positive, trimLeadingZero s )
+    in
+        if String.isEmpty num then
+            Just Zero
+        else
+            Maybe.map (Integer sign) (magnitudeFromString num)
+
+
 magnitudeFromString : String -> Maybe Magnitude
 magnitudeFromString s =
     s
-        |> String.reverse
-        |> splitBy 7 []
-        |> List.map String.reverse
+        |> splitFromEndBy 7 []
         |> List.map (String.toInt >> Result.toMaybe)
         |> combine
 
 
-splitBy : Int -> List String -> String -> List String
-splitBy n acc s =
+splitFromEndBy : Int -> List String -> String -> List String
+splitFromEndBy n acc s =
     if s == "" then
         acc
     else
         let
             chunk =
-                String.left n s
+                String.right n s
 
             rest =
-                String.dropLeft n s
+                String.dropRight n s
         in
-            splitBy n (chunk :: acc) rest
+            splitFromEndBy n (chunk :: acc) rest
 
 
-combine : List (Maybe Int) -> Maybe (List Int)
+combine : List (Maybe a) -> Maybe (List a)
 combine =
     List.foldl
         (\x acc ->
