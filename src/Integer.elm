@@ -21,6 +21,9 @@ module Integer
         , gte
         , eq
         , toString
+        , trimLeadingZeroFromMag
+        , trimLeadingZeroFromStr
+        , normalizeMagnitude
         )
 
 import Char
@@ -126,9 +129,9 @@ fromString_ s =
     let
         ( sign, num ) =
             if String.startsWith "-" s then
-                ( Negative, s |> String.dropLeft 1 |> trimLeadingZero )
+                ( Negative, s |> String.dropLeft 1 |> trimLeadingZeroFromStr )
             else
-                ( Positive, trimLeadingZero s )
+                ( Positive, trimLeadingZeroFromStr s )
     in
         if String.isEmpty num then
             Just Zero
@@ -187,13 +190,29 @@ add i1 i2 =
             i1
 
         ( Integer Positive m1, Integer Negative m2 ) ->
-            sub i1 (abs i2)
+            case compareMag m1 m2 of
+                GT ->
+                    Integer Positive (addMagnitudes m1 (List.map Basics.negate m2) [] |> normalizeMagnitude)
+
+                EQ ->
+                    Zero
+
+                LT ->
+                    Integer Negative (addMagnitudes (List.map Basics.negate m1) m2 [] |> normalizeMagnitude)
 
         ( Integer Negative m1, Integer Positive m2 ) ->
-            sub i2 (abs i1)
+            case compareMag m1 m2 of
+                GT ->
+                    Integer Negative (addMagnitudes m1 (List.map Basics.negate m2) [] |> normalizeMagnitude)
+
+                EQ ->
+                    Zero
+
+                LT ->
+                    Integer Positive (addMagnitudes (List.map Basics.negate m1) m2 [] |> normalizeMagnitude)
 
         ( Integer s1 m1, Integer s2 m2 ) ->
-            Integer s1 (addMagsWithCarry m1 m2 [] 0)
+            Integer s1 (addMagnitudes m1 m2 [] |> normalizeMagnitude)
 
 
 addMagsWithCarry : Magnitude -> Magnitude -> Magnitude -> Digit -> Magnitude
@@ -201,9 +220,14 @@ addMagsWithCarry m1 m2 acc prevCarry =
     case ( m1, m2 ) of
         ( [], [] ) ->
             if prevCarry == 0 then
-                removeLeadingZero acc
+                acc
+                    |> List.reverse
+                    |> trimLeadingZeroFromMag
             else
-                removeLeadingZero (prevCarry :: acc)
+                prevCarry
+                    :: acc
+                    |> List.reverse
+                    |> trimLeadingZeroFromMag
 
         ( [], d :: ds ) ->
             let
@@ -211,13 +235,10 @@ addMagsWithCarry m1 m2 acc prevCarry =
                     d + prevCarry
 
                 carry =
-                    if sum >= maxBase then
-                        1
-                    else
-                        0
+                    sum // maxBase
 
                 rem =
-                    sum % maxBase
+                    Basics.rem sum maxBase
             in
                 addMagsWithCarry [] ds (rem :: acc) carry
 
@@ -227,13 +248,10 @@ addMagsWithCarry m1 m2 acc prevCarry =
                     d + prevCarry
 
                 carry =
-                    if sum >= maxBase then
-                        1
-                    else
-                        0
+                    sum // maxBase
 
                 rem =
-                    sum % maxBase
+                    Basics.rem sum maxBase
             in
                 addMagsWithCarry ds [] (rem :: acc) carry
 
@@ -243,13 +261,10 @@ addMagsWithCarry m1 m2 acc prevCarry =
                     d1 + d2 + prevCarry
 
                 carry =
-                    if sum >= maxBase then
-                        1
-                    else
-                        0
+                    sum // maxBase
 
                 rem =
-                    sum % maxBase
+                    Basics.rem sum maxBase
             in
                 addMagsWithCarry ds1 ds2 (rem :: acc) carry
 
@@ -264,77 +279,66 @@ sub i1 i2 =
             i1
 
         ( Integer s1 m1, Integer s2 m2 ) ->
-            if s1 /= s2 then
-                Integer s1 (addMagsWithCarry m1 m2 [] 0)
+            add i1 (negate i2)
+
+
+normalizeMagnitude : Magnitude -> Magnitude
+normalizeMagnitude m =
+    let
+        folder : Digit -> ( Digit, Magnitude ) -> ( Digit, Magnitude )
+        folder d ( prevCarry, acc ) =
+            let
+                sum =
+                    (d + prevCarry)
+
+                carry =
+                    if sum < 0 then
+                        -1
+                    else
+                        sum // maxBase
+
+                d_ =
+                    sum % maxBase
+            in
+                ( carry, d_ :: acc )
+
+        handleFinalCarry : ( Digit, Magnitude ) -> Magnitude
+        handleFinalCarry ( c, m ) =
+            if c == 0 then
+                m
             else
-                case compareMag m1 m2 of
-                    GT ->
-                        Integer s1 (subMagsWithCarry m1 m2 [] 0)
+                case m of
+                    -- this branch should not be reached
+                    [] ->
+                        []
 
-                    EQ ->
-                        Zero
+                    d :: ds ->
+                        if d + c == 0 then
+                            ds
+                        else
+                            (d + c) :: ds
+    in
+        m
+            |> List.foldl folder ( 0, [] )
+            |> handleFinalCarry
+            |> List.reverse
+            |> trimLeadingZeroFromMag
 
-                    LT ->
-                        Integer (negateSign s2) (subMagsWithCarry m2 m1 [] 0)
 
-
-subMagsWithCarry : Magnitude -> Magnitude -> Magnitude -> Digit -> Magnitude
-subMagsWithCarry m1 m2 acc prevCarry =
+addMagnitudes : Magnitude -> Magnitude -> Magnitude -> Magnitude
+addMagnitudes m1 m2 acc =
     case ( m1, m2 ) of
         ( [], [] ) ->
-            if prevCarry == 0 then
-                removeLeadingZero acc
-            else
-                removeLeadingZero
-                    (prevCarry :: acc)
+            List.reverse acc
 
-        ( [], d :: ds ) ->
-            let
-                diff =
-                    d - prevCarry
+        ( [], _ ) ->
+            List.append (List.reverse acc) m2
 
-                carry =
-                    if diff < 0 then
-                        1
-                    else
-                        0
-
-                rem =
-                    diff % maxBase
-            in
-                subMagsWithCarry [] ds (rem :: acc) carry
-
-        ( d :: ds, [] ) ->
-            let
-                diff =
-                    d - prevCarry
-
-                carry =
-                    if diff < 0 then
-                        1
-                    else
-                        0
-
-                rem =
-                    diff % maxBase
-            in
-                subMagsWithCarry ds [] (rem :: acc) carry
+        ( _, [] ) ->
+            List.append (List.reverse acc) m1
 
         ( d1 :: ds1, d2 :: ds2 ) ->
-            let
-                diff =
-                    d1 - d2 - prevCarry
-
-                carry =
-                    if diff < 0 then
-                        1
-                    else
-                        0
-
-                rem =
-                    diff % maxBase
-            in
-                subMagsWithCarry ds1 ds2 (rem :: acc) carry
+            addMagnitudes ds1 ds2 ((d1 + d2) :: acc)
 
 
 mul : Integer -> Integer -> Integer
@@ -604,13 +608,13 @@ toString i =
                         |> List.map Basics.toString
                         |> List.map (String.padLeft 7 '0')
                         |> List.foldl (++) ""
-                        |> trimLeadingZero
+                        |> trimLeadingZeroFromStr
             in
                 sign ++ num
 
 
-trimLeadingZero : String -> String
-trimLeadingZero s =
+trimLeadingZeroFromStr : String -> String
+trimLeadingZeroFromStr s =
     String.foldl
         (\c cs ->
             if c == '0' && cs == "" then
@@ -809,9 +813,9 @@ negateSign s =
             Positive
 
 
-removeLeadingZero : Magnitude -> Magnitude
-removeLeadingZero m =
-    dropWhileEnd ((==) 0) (List.reverse m)
+trimLeadingZeroFromMag : Magnitude -> Magnitude
+trimLeadingZeroFromMag m =
+    dropWhileEnd ((==) 0) m
 
 
 dropWhileEnd : (a -> Bool) -> List a -> List a
