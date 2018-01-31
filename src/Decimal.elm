@@ -9,6 +9,7 @@ module Decimal
         , add
         , sub
         , mul
+        , safeDiv
         , negate
         , trimTrailingZero
         , abs
@@ -329,6 +330,64 @@ mul d1 d2 =
 
 
 -- TODO : Impelement division
+
+
+safeDiv : Decimal -> Decimal -> Maybe Decimal
+safeDiv d1 d2 =
+    case ( d1, d2 ) of
+        ( Zero, _ ) ->
+            Just Zero
+
+        ( _, Zero ) ->
+            Nothing
+
+        ( Decimal i1 e1, Decimal i2 e2 ) ->
+            let
+                startingExp =
+                    e1 - e2
+
+                ( s, e ) =
+                    safeDiv_ i1 i2 ( Integer.fromInt 0, startingExp )
+            in
+                Just (Decimal s e)
+
+
+safeDiv_ : Significand -> Significand -> ( Significand, Exponent ) -> ( Significand, Exponent )
+safeDiv_ s1 s2 ( s, e ) =
+    if e < -20 then
+        ( s, e )
+    else if Integer.lt s1 s2 then
+        let
+            s_ =
+                Integer.mul s (Integer.fromInt (10 ^ 7))
+
+            e_ =
+                e - 1
+        in
+            safeDiv_ (Integer.mul s1 (Integer.fromInt (10 ^ 7))) s2 ( s_, e_ )
+    else
+        let
+            ( q, r ) =
+                Integer.divmod s1 s2
+
+            s_ =
+                Integer.add (Integer.mul s (Integer.fromInt (10 ^ 7))) q
+
+            e_ =
+                e - 1
+        in
+            safeDiv_ r s2 ( s_, e_ )
+
+
+
+{-
+   0. if e < -20 then return acc
+   1. shift digit of dividend by 1 and e = e -1 until i1 >= i2
+   2. if i1 >= i2, divmod i1 i2 = Maybe (q, r)
+   3. shift acc by 1 and add q
+   4. recurse with r, e - 1
+
+-}
 -- Sign and other stuff
 
 
