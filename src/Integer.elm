@@ -225,6 +225,10 @@ sub i1 i2 =
             add i1 (negate i2)
 
 
+
+-- assume abs m1 is greater than abs m2, so the most significant digit will never be negative
+
+
 addMagnitudes : Magnitude -> Magnitude -> Magnitude
 addMagnitudes m1 m2 =
     let
@@ -325,18 +329,32 @@ mul i1 i2 =
 
 multiplyMagnitudes : Magnitude -> Magnitude -> Magnitude
 multiplyMagnitudes m1 m2 =
-    List.map (\d -> List.map ((*) d) m1) m2
-        |> List.foldl
-            (\m ( digit, acc ) ->
-                ( digit + 1
-                , (List.append (List.repeat digit 0) m)
-                    :: acc
+    let
+        calculatePartialProducts : Magnitude -> Magnitude -> List Magnitude
+        calculatePartialProducts m1 m2 =
+            List.map (\d -> List.map ((*) d) m1) m2
+
+        addScaleToPartialProducts : List Magnitude -> ( Int, List Magnitude )
+        addScaleToPartialProducts magList =
+            List.foldl
+                (\m ( digit, acc ) ->
+                    ( digit + 1
+                    , (List.append (List.repeat digit 0) m)
+                        :: acc
+                    )
                 )
-            )
-            ( 0, [] )
-        |> Tuple.second
-        |> List.foldl addMagnitudes []
-        |> normalizeMagnitude
+                ( 0, [] )
+                magList
+
+        sumPartialProducts : List Magnitude -> Magnitude
+        sumPartialProducts magList =
+            List.foldl addMagnitudes [] magList
+    in
+        calculatePartialProducts m1 m2
+            |> addScaleToPartialProducts
+            |> Tuple.second
+            |> sumPartialProducts
+            |> normalizeMagnitude
 
 
 safeDiv : Integer -> Integer -> Maybe Integer

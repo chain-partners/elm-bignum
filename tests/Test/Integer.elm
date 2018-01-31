@@ -174,9 +174,9 @@ suite =
                             fromString i
 
                         b =
-                            Just (fromInt 0)
+                            fromInt 0
                     in
-                        Expect.equal (Maybe.map2 sub a b) a
+                        Expect.equal (Maybe.map (flip sub b) a) a
             , fuzz intString "should have inverse" <|
                 \i ->
                     let
@@ -184,7 +184,7 @@ suite =
                             fromString i
 
                         b =
-                            Just (fromInt 0)
+                            fromString "0"
                     in
                         Expect.equal (Maybe.map2 sub a a) b
             ]
@@ -252,12 +252,12 @@ suite =
                             fromString i
 
                         b =
-                            Just (fromInt 1)
+                            fromInt 1
 
                         expected =
-                            Maybe.map2 (,) a (Just (fromInt 0))
+                            Maybe.map (flip (,) (fromInt 0)) a
                     in
-                        Expect.equal (join (Maybe.map2 safeDivmod a b)) expected
+                        Expect.equal (Maybe.andThen (flip safeDivmod b) a) expected
             , describe "should have zero-related properties"
                 [ fuzz intString "dividing zero yields zero" <|
                     \i ->
@@ -276,9 +276,9 @@ suite =
                                 fromString i
 
                             b =
-                                Just (fromInt 0)
+                                fromInt 0
                         in
-                            Expect.equal (join (Maybe.map2 safeDivmod a b)) Nothing
+                            Expect.equal (Maybe.andThen (flip safeDivmod b) a) Nothing
                 ]
             , fuzz2 intString intString "should produce valid quotient and remainder" <|
                 \i1 i2 ->
@@ -341,6 +341,11 @@ suite =
                                 Expect.fail "was given invalid string for generating Integer"
 
                             _ ->
-                                Expect.equal (Maybe.map2 Integer.compare (Maybe.map2 sub a b) (Just (fromInt 0))) comparison
+                                Expect.equal
+                                    (Maybe.map2 Integer.compare
+                                        (Maybe.map2 sub a b)
+                                        (fromString "0")
+                                    )
+                                    comparison
             ]
         ]
