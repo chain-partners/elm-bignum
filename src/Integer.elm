@@ -21,9 +21,6 @@ module Integer
         , gte
         , eq
         , toString
-        , trimLeadingZeroFromMag
-        , trimLeadingZeroFromStr
-        , normalizeMagnitude
         )
 
 import Char
@@ -192,81 +189,27 @@ add i1 i2 =
         ( Integer Positive m1, Integer Negative m2 ) ->
             case compareMag m1 m2 of
                 GT ->
-                    Integer Positive (addMagnitudes m1 (List.map Basics.negate m2) [] |> normalizeMagnitude)
+                    Integer Positive (addMagnitudes m1 (List.map Basics.negate m2))
 
                 EQ ->
                     Zero
 
                 LT ->
-                    Integer Negative (addMagnitudes (List.map Basics.negate m1) m2 [] |> normalizeMagnitude)
+                    Integer Negative (addMagnitudes (List.map Basics.negate m1) m2)
 
         ( Integer Negative m1, Integer Positive m2 ) ->
             case compareMag m1 m2 of
                 GT ->
-                    Integer Negative (addMagnitudes m1 (List.map Basics.negate m2) [] |> normalizeMagnitude)
+                    Integer Negative (addMagnitudes m1 (List.map Basics.negate m2))
 
                 EQ ->
                     Zero
 
                 LT ->
-                    Integer Positive (addMagnitudes (List.map Basics.negate m1) m2 [] |> normalizeMagnitude)
+                    Integer Positive (addMagnitudes (List.map Basics.negate m1) m2)
 
         ( Integer s1 m1, Integer s2 m2 ) ->
-            Integer s1 (addMagnitudes m1 m2 [] |> normalizeMagnitude)
-
-
-addMagsWithCarry : Magnitude -> Magnitude -> Magnitude -> Digit -> Magnitude
-addMagsWithCarry m1 m2 acc prevCarry =
-    case ( m1, m2 ) of
-        ( [], [] ) ->
-            if prevCarry == 0 then
-                acc
-                    |> List.reverse
-                    |> trimLeadingZeroFromMag
-            else
-                prevCarry
-                    :: acc
-                    |> List.reverse
-                    |> trimLeadingZeroFromMag
-
-        ( [], d :: ds ) ->
-            let
-                sum =
-                    d + prevCarry
-
-                carry =
-                    sum // maxBase
-
-                rem =
-                    Basics.rem sum maxBase
-            in
-                addMagsWithCarry [] ds (rem :: acc) carry
-
-        ( d :: ds, [] ) ->
-            let
-                sum =
-                    d + prevCarry
-
-                carry =
-                    sum // maxBase
-
-                rem =
-                    Basics.rem sum maxBase
-            in
-                addMagsWithCarry ds [] (rem :: acc) carry
-
-        ( d1 :: ds1, d2 :: ds2 ) ->
-            let
-                sum =
-                    d1 + d2 + prevCarry
-
-                carry =
-                    sum // maxBase
-
-                rem =
-                    Basics.rem sum maxBase
-            in
-                addMagsWithCarry ds1 ds2 (rem :: acc) carry
+            Integer s1 (addMagnitudes m1 m2)
 
 
 sub : Integer -> Integer -> Integer
@@ -280,6 +223,29 @@ sub i1 i2 =
 
         ( Integer s1 m1, Integer s2 m2 ) ->
             add i1 (negate i2)
+
+
+addMagnitudes : Magnitude -> Magnitude -> Magnitude
+addMagnitudes m1 m2 =
+    let
+        zipMagnitudes : Magnitude -> Magnitude -> List ( Digit, Digit ) -> List ( Digit, Digit )
+        zipMagnitudes m1 m2 acc =
+            case ( m1, m2 ) of
+                ( [], [] ) ->
+                    acc
+
+                ( [], d :: ds ) ->
+                    zipMagnitudes [] ds (( 0, d ) :: acc)
+
+                ( d :: ds, [] ) ->
+                    zipMagnitudes ds [] (( d, 0 ) :: acc)
+
+                ( d1 :: ds1, d2 :: ds2 ) ->
+                    zipMagnitudes ds1 ds2 (( d1, d2 ) :: acc)
+    in
+        zipMagnitudes m1 m2 []
+            |> List.foldl (\( d1, d2 ) acc -> (d1 + d2) :: acc) []
+            |> normalizeMagnitude
 
 
 normalizeMagnitude : Magnitude -> Magnitude
@@ -316,29 +282,13 @@ normalizeMagnitude m =
                         if d + c == 0 then
                             ds
                         else
-                            (d + c) :: ds
+                            c :: m
     in
         m
             |> List.foldl folder ( 0, [] )
             |> handleFinalCarry
             |> List.reverse
             |> trimLeadingZeroFromMag
-
-
-addMagnitudes : Magnitude -> Magnitude -> Magnitude -> Magnitude
-addMagnitudes m1 m2 acc =
-    case ( m1, m2 ) of
-        ( [], [] ) ->
-            List.reverse acc
-
-        ( [], _ ) ->
-            List.append (List.reverse acc) m2
-
-        ( _, [] ) ->
-            List.append (List.reverse acc) m1
-
-        ( d1 :: ds1, d2 :: ds2 ) ->
-            addMagnitudes ds1 ds2 ((d1 + d2) :: acc)
 
 
 mul : Integer -> Integer -> Integer
@@ -361,62 +311,32 @@ mul i1 i2 =
                 magnitude =
                     case Basics.compare (List.length m1) (List.length m2) of
                         GT ->
-                            mulMagsWithCarry m1 m2 [] []
+                            multiplyMagnitudes m1 m2
 
                         _ ->
-                            mulMagsWithCarry m2 m1 [] []
+                            multiplyMagnitudes m2 m1
             in
                 Integer sign magnitude
 
 
-mulMagsWithCarry : Magnitude -> Magnitude -> Magnitude -> Magnitude -> Magnitude
-mulMagsWithCarry m1 m2 acc prevCarry =
-    case ( m1, m2 ) of
-        ( _, [] ) ->
-            if prevCarry == [] then
-                List.reverse acc
-            else
-                List.reverse ((List.reverse prevCarry) ++ acc)
 
-        ( _, d :: ds ) ->
-            let
-                product =
-                    addMagsWithCarry (mulMagWithOneDigit m1 d [] 0) prevCarry [] 0
-
-                rem =
-                    product
-                        |> List.head
-                        |> Maybe.withDefault 0
-
-                carry =
-                    product
-                        |> List.tail
-                        |> Maybe.withDefault []
-            in
-                mulMagsWithCarry m1 ds (rem :: acc) carry
+-- assume that length of m1 is longer than or equal to that of m2
 
 
-mulMagWithOneDigit : Magnitude -> Digit -> Magnitude -> Digit -> Magnitude
-mulMagWithOneDigit m multiplier acc prevCarry =
-    case m of
-        [] ->
-            if prevCarry == 0 then
-                List.reverse acc
-            else
-                List.reverse (prevCarry :: acc)
-
-        d :: ds ->
-            let
-                product =
-                    d * multiplier + prevCarry
-
-                carry =
-                    product // maxBase
-
-                rem =
-                    product % maxBase
-            in
-                mulMagWithOneDigit ds multiplier (rem :: acc) carry
+multiplyMagnitudes : Magnitude -> Magnitude -> Magnitude
+multiplyMagnitudes m1 m2 =
+    List.map (\d -> List.map ((*) d) m1) m2
+        |> List.foldl
+            (\m ( digit, acc ) ->
+                ( digit + 1
+                , (List.append (List.repeat digit 0) m)
+                    :: acc
+                )
+            )
+            ( 0, [] )
+        |> Tuple.second
+        |> List.foldl addMagnitudes []
+        |> normalizeMagnitude
 
 
 safeDiv : Integer -> Integer -> Maybe Integer
