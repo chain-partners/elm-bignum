@@ -7,6 +7,7 @@ import Test exposing (..)
 import Shrink exposing (Shrinker)
 import Lazy.List exposing (empty, (:::))
 import Decimal exposing (..)
+import Char
 import Integer
 import Test.Integer exposing (intString, maxIntRange)
 
@@ -14,13 +15,13 @@ import Test.Integer exposing (intString, maxIntRange)
 -- Generates string with 10 ^ 20 integer and 10 ^ 20 fraction parts
 
 
-floatString : Fuzzer String
-floatString =
-    custom floatStringGenerator floatStringShrinker
+decimalString : Fuzzer String
+decimalString =
+    custom decimalStringGenerator decimalStringShrinker
 
 
-floatStringGenerator : Generator String
-floatStringGenerator =
+decimalStringGenerator : Generator String
+decimalStringGenerator =
     let
         int =
             Random.list 2 (Random.int 0 Random.maxInt)
@@ -41,9 +42,16 @@ floatStringGenerator =
             |> Random.map trimTrailingZero
 
 
-floatStringShrinker : Shrinker String
-floatStringShrinker s =
+decimalStringShrinker : Shrinker String
+decimalStringShrinker s =
     let
+        isBaseValue : String -> Bool
+        isBaseValue s =
+            s
+                |> String.filter Char.isDigit
+                |> String.length
+                |> flip (<=) 2
+
         baseValues : List String
         baseValues =
             let
@@ -60,16 +68,12 @@ floatStringShrinker s =
                     |> List.map Basics.toString
                     |> (::) "0.0"
 
-        shrinkInt : String -> String
-        shrinkInt s =
+        shrinkNum : String -> String
+        shrinkNum s =
             if String.length s == 1 then
                 "0"
             else
                 String.dropRight 1 s
-
-        shrinkFraction : String -> String
-        shrinkFraction s =
-            String.dropRight 1 s
 
         ( sign, num ) =
             if String.startsWith "-" s then
@@ -90,14 +94,24 @@ floatStringShrinker s =
 
         s_ =
             if String.isEmpty fraction then
-                sign ++ (shrinkInt int)
+                sign ++ (shrinkNum int)
             else
-                (sign ++ (shrinkInt int)) ++ ("." ++ (shrinkFraction fraction))
+                (sign ++ (shrinkNum int)) ++ ("." ++ (shrinkNum fraction))
     in
-        if List.member s baseValues then
+        if isBaseValue s then
             empty
         else
             s_ ::: empty
+
+
+join : Maybe (Maybe a) -> Maybe a
+join mx =
+    case mx of
+        Just x ->
+            x
+
+        Nothing ->
+            Nothing
 
 
 suite : Test
@@ -129,59 +143,59 @@ suite =
                     Expect.equal (Decimal.toString << fromFloat <| f) (Basics.toString f)
             ]
         , describe "fromString"
-            [ fuzz floatString "should create correct Decimal" <|
-                \f ->
-                    Expect.equal (Maybe.map Decimal.toString << fromString <| f) (Just f)
+            [ fuzz decimalString "should create correct Decimal" <|
+                \d ->
+                    Expect.equal (Maybe.map Decimal.toString << fromString <| d) (Just d)
             ]
         , describe "add"
-            [ fuzz2 floatString floatString "should have transitivity property" <|
-                \f1 f2 ->
+            [ fuzz2 decimalString decimalString "should have transitivity property" <|
+                \d1 d2 ->
                     let
                         a =
-                            fromString f1
+                            fromString d1
 
                         b =
-                            fromString f2
+                            fromString d2
                     in
                         Expect.equal (Maybe.map2 add a b) (Maybe.map2 add b a)
-            , fuzz3 floatString floatString floatString "should have associativity property" <|
-                \f1 f2 f3 ->
+            , fuzz3 decimalString decimalString decimalString "should have associativity property" <|
+                \d1 d2 d3 ->
                     let
                         a =
-                            fromString f1
+                            fromString d1
 
                         b =
-                            fromString f2
+                            fromString d2
 
                         c =
-                            fromString f3
+                            fromString d3
                     in
                         Expect.equal (Maybe.map2 add (Maybe.map2 add a b) c)
                             (Maybe.map2 add
                                 a
                                 (Maybe.map2 add b c)
                             )
-            , fuzz floatString "should have identity property" <|
-                \f ->
+            , fuzz decimalString "should have identity property" <|
+                \d ->
                     let
                         a =
-                            fromString f
+                            fromString d
 
                         b =
                             fromFloat 0
                     in
                         Expect.equal (Maybe.map (add b) a) a
-            , fuzz3 floatString floatString floatString "should have distributive property" <|
-                \f1 f2 f3 ->
+            , fuzz3 decimalString decimalString decimalString "should have distributive property" <|
+                \d1 d2 d3 ->
                     let
                         a =
-                            fromString f1
+                            fromString d1
 
                         b =
-                            fromString f2
+                            fromString d2
 
                         c =
-                            fromString f3
+                            fromString d3
                     in
                         Expect.equal (Maybe.map2 mul a (Maybe.map2 add b c))
                             (Maybe.map2 add
@@ -190,21 +204,21 @@ suite =
                             )
             ]
         , describe "sub"
-            [ fuzz floatString "should have identity property" <|
-                \f ->
+            [ fuzz decimalString "should have identity property" <|
+                \d ->
                     let
                         a =
-                            fromString f
+                            fromString d
 
                         b =
                             Just (fromFloat 0)
                     in
                         Expect.equal (Maybe.map2 sub a b) a
-            , fuzz floatString "should have inverse" <|
-                \f ->
+            , fuzz decimalString "should have inverse" <|
+                \d ->
                     let
                         a =
-                            fromString f
+                            fromString d
 
                         b =
                             Just (fromInt 0)
@@ -212,54 +226,54 @@ suite =
                         Expect.equal (Maybe.map2 sub a a) b
             ]
         , describe "mul"
-            [ fuzz2 floatString floatString "should have transitivity property" <|
-                \f1 f2 ->
+            [ fuzz2 decimalString decimalString "should have transitivity property" <|
+                \d1 d2 ->
                     let
                         a =
-                            fromString f1
+                            fromString d1
 
                         b =
-                            fromString f2
+                            fromString d2
                     in
                         Expect.equal (Maybe.map2 mul a b) (Maybe.map2 mul b a)
-            , fuzz3 floatString floatString floatString "should have associativity property" <|
-                \f1 f2 f3 ->
+            , fuzz3 decimalString decimalString decimalString "should have associativity property" <|
+                \d1 d2 d3 ->
                     let
                         a =
-                            fromString f1
+                            fromString d1
 
                         b =
-                            fromString f3
+                            fromString d3
 
                         c =
-                            fromString f3
+                            fromString d3
                     in
                         Expect.equal (Maybe.map2 mul (Maybe.map2 mul a b) c)
                             (Maybe.map2 mul
                                 a
                                 (Maybe.map2 mul b c)
                             )
-            , fuzz floatString "should have identity property" <|
-                \f ->
+            , fuzz decimalString "should have identity property" <|
+                \d ->
                     let
                         a =
-                            fromString f
+                            fromString d
 
                         b =
                             fromFloat 1
                     in
                         Expect.equal (Maybe.map (mul b) a) a
-            , fuzz3 floatString floatString floatString "should have distributive property" <|
-                \f1 f2 f3 ->
+            , fuzz3 decimalString decimalString decimalString "should have distributive property" <|
+                \d1 d2 d3 ->
                     let
                         a =
-                            fromString f1
+                            fromString d1
 
                         b =
-                            fromString f2
+                            fromString d2
 
                         c =
-                            fromString f3
+                            fromString d3
                     in
                         Expect.equal (Maybe.map2 mul a (Maybe.map2 add b c))
                             (Maybe.map2 add
@@ -267,8 +281,76 @@ suite =
                                 (Maybe.map2 mul a c)
                             )
             ]
+        , describe "safeDiv"
+            [ fuzz decimalString "should have identity property" <|
+                \d ->
+                    let
+                        a =
+                            fromString d
+
+                        b =
+                            fromInt 1
+                    in
+                        Expect.equal (Maybe.andThen (flip safeDiv b) a) a
+            , describe "should have zero-related properties"
+                [ fuzz decimalString "dividing zero yields zero" <|
+                    \d ->
+                        let
+                            a =
+                                fromString d
+
+                            b =
+                                fromInt 0
+                        in
+                            Expect.equal (Maybe.andThen (safeDiv b) a) (Just b)
+                , fuzz decimalString "dividing with zero yields Nothing" <|
+                    \d ->
+                        let
+                            a =
+                                fromString d
+
+                            b =
+                                fromInt 0
+                        in
+                            Expect.equal (Maybe.andThen (flip safeDiv b) a) Nothing
+                ]
+            , fuzz2 decimalString decimalString "should produce sufficiently precise quotient" <|
+                \d1 d2 ->
+                    let
+                        a =
+                            fromString d1
+
+                        b =
+                            fromString d2
+
+                        result =
+                            join (Maybe.map2 safeDiv a b)
+                    in
+                        case result of
+                            Nothing ->
+                                Expect.fail "was given invalid string for generating Decimal"
+
+                            Just quotient ->
+                                let
+                                    product =
+                                        Maybe.map (mul quotient) b
+                                in
+                                    if (String.length << Decimal.toString <| quotient) < 20 then
+                                        Expect.equal product a
+                                    else
+                                        -- TODO: add test for dynamic comparison for dynamic tolerance
+                                        let
+                                            diff =
+                                                Maybe.map Decimal.abs
+                                                    (Maybe.map2 sub a product)
+
+                                            maxDiff =
+                                                Decimal.fromString ("0." ++ (String.repeat 1 "0") ++ "1")
+                                        in
+                                            Expect.pass
+            ]
         , describe "abs"
-            [ fuzz floatString "abs f should be larger than or equal to f" <|
+            [ fuzz decimalString "abs f should be larger than or equal to f" <|
                 \f ->
                     case (Maybe.map2 gte (Maybe.map Decimal.abs (fromString f)) (fromString f)) of
                         Just True ->
@@ -278,7 +360,7 @@ suite =
                             Expect.fail "property does not hold"
             ]
         , describe "negate"
-            [ fuzz floatString "should return original i when applied twice" <|
+            [ fuzz decimalString "should return original i when applied twice" <|
                 \f ->
                     let
                         float =
@@ -292,14 +374,14 @@ suite =
                         Expect.equal float float_
             ]
         , describe "compare"
-            [ fuzz2 floatString floatString "should return correct order" <|
-                \f1 f2 ->
+            [ fuzz2 decimalString decimalString "should return correct order" <|
+                \d1 d2 ->
                     let
                         a =
-                            fromString f1
+                            fromString d1
 
                         b =
-                            fromString f2
+                            fromString d2
 
                         comparison =
                             Maybe.map2 Decimal.compare a b

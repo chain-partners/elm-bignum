@@ -107,7 +107,7 @@ getSigExpFromInteger ( i, e ) =
                 ( i, e )
 
             ( _, True ) ->
-                ( i, e )
+                getSigExpFromInteger ( q, e + 1 )
 
             _ ->
                 ( i, e )
@@ -228,7 +228,10 @@ toString d =
             "0"
 
         Decimal i e ->
-            applyExponent (Integer.toString i) e
+            if Integer.gte i (Integer.fromInt 0) then
+                applyExponent (Integer.toString i) e
+            else
+                "-" ++ (applyExponent (Integer.toString (Integer.abs i)) e)
 
 
 applyExponent : String -> Int -> String
@@ -274,16 +277,30 @@ add d1 d2 =
 
         ( Decimal s1 e1, Decimal s2 e2 ) ->
             let
-                s =
+                ( s, e ) =
                     if e1 >= e2 then
-                        Integer.add s2 (Integer.mul s1 (Integer.fromInt (10 ^ (e1 - e2))))
+                        let
+                            normalizer =
+                                "1"
+                                    ++ (String.repeat (e1 - e2) "0")
+                                    |> Integer.fromString
+                                    |> Maybe.withDefault (Integer.fromInt 0)
+                        in
+                            ( Integer.add (Integer.mul s1 normalizer) s2, e2 )
                     else
-                        Integer.add s1 (Integer.mul s2 (Integer.fromInt (10 ^ (e2 - e1))))
+                        let
+                            normalizer =
+                                "1"
+                                    ++ (String.repeat (e2 - e1) "0")
+                                    |> Integer.fromString
+                                    |> Maybe.withDefault (Integer.fromInt 0)
+                        in
+                            ( Integer.add s1 (Integer.mul s2 normalizer), e1 )
             in
                 if s == Integer.fromInt 0 then
                     Zero
                 else
-                    renormalizeDecimal (Decimal s (min e1 e2))
+                    renormalizeDecimal (Decimal s e)
 
 
 renormalizeDecimal : Decimal -> Decimal
@@ -328,10 +345,6 @@ mul d1 d2 =
                 renormalizeDecimal d_
 
 
-
--- TODO : Impelement division
-
-
 safeDiv : Decimal -> Decimal -> Maybe Decimal
 safeDiv d1 d2 =
     case ( d1, d2 ) of
@@ -341,53 +354,63 @@ safeDiv d1 d2 =
         ( _, Zero ) ->
             Nothing
 
-        ( Decimal i1 e1, Decimal i2 e2 ) ->
+        ( Decimal s1 e1, Decimal s2 e2 ) ->
             let
                 startingExp =
                     e1 - e2
 
+                zeroInt =
+                    Integer.fromInt 0
+
+                isPositive =
+                    Integer.lt s1 zeroInt == Integer.lt s2 zeroInt
+
                 ( s, e ) =
-                    safeDiv_ i1 i2 ( Integer.fromInt 0, startingExp )
+                    safeDiv_ (Integer.abs s1) (Integer.abs s2) ( zeroInt, startingExp )
+
+                s_ =
+                    if isPositive then
+                        s
+                    else
+                        Integer.negate s
             in
-                Just (Decimal s e)
+                Just (renormalizeDecimal (Decimal s_ e))
 
 
 safeDiv_ : Significand -> Significand -> ( Significand, Exponent ) -> ( Significand, Exponent )
 safeDiv_ s1 s2 ( s, e ) =
-    if e < -20 then
-        ( s, e )
-    else if Integer.lt s1 s2 then
-        let
-            s_ =
-                Integer.mul s (Integer.fromInt (10 ^ 7))
+    let
+        hasNoRemainder : Significand -> Bool
+        hasNoRemainder s =
+            s == Integer.fromInt 0
 
-            e_ =
-                e - 1
-        in
-            safeDiv_ (Integer.mul s1 (Integer.fromInt (10 ^ 7))) s2 ( s_, e_ )
-    else
-        let
-            ( q, r ) =
-                Integer.divmod s1 s2
+        hasGivenPrecision : Exponent -> Exponent -> Bool
+        hasGivenPrecision targetE currentE =
+            currentE < targetE
+    in
+        if hasGivenPrecision -20 e || hasNoRemainder s1 then
+            ( s, e + 1 )
+        else
+            let
+                digit =
+                    Integer.fromInt 10
 
-            s_ =
-                Integer.add (Integer.mul s (Integer.fromInt (10 ^ 7))) q
+                ( q, r ) =
+                    Integer.divmod s1 s2
 
-            e_ =
-                e - 1
-        in
-            safeDiv_ r s2 ( s_, e_ )
+                s_ =
+                    Integer.add (Integer.mul s digit) q
+
+                e_ =
+                    e - 1
+
+                s1_ =
+                    Integer.mul r digit
+            in
+                safeDiv_ s1_ s2 ( s_, e_ )
 
 
 
-{-
-   0. if e < -20 then return acc
-   1. shift digit of dividend by 1 and e = e -1 until i1 >= i2
-   2. if i1 >= i2, divmod i1 i2 = Maybe (q, r)
-   3. shift acc by 1 and add q
-   4. recurse with r, e - 1
-
--}
 -- Sign and other stuff
 
 

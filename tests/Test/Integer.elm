@@ -206,7 +206,7 @@ suite =
                             fromString i1
 
                         b =
-                            fromString i3
+                            fromString i2
 
                         c =
                             fromString i3
