@@ -114,6 +114,18 @@ join mx =
             Nothing
 
 
+trimTrailingZero : String -> String
+trimTrailingZero =
+    String.foldr
+        (\c cs ->
+            if c == '0' && cs == "" then
+                ""
+            else
+                String.cons c cs
+        )
+        ""
+
+
 suite : Test
 suite =
     describe "Decimal module"

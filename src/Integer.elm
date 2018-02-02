@@ -7,11 +7,11 @@ module Integer
         , sub
         , mul
         , divmod
-        , safeDivmod
+        , unsafeDivmod
         , div
-        , safeDiv
+        , unsafeDiv
         , rem
-        , safeRem
+        , unsafeRem
         , abs
         , negate
         , compare
@@ -55,8 +55,8 @@ type alias Magnitude =
 -- Constants
 
 
-maxBase : Base
-maxBase =
+defaultBase : Base
+defaultBase =
     10 ^ 7
 
 
@@ -80,19 +80,19 @@ fromInt i =
 magnitudeFromInt : Int -> Magnitude -> Magnitude
 magnitudeFromInt i acc =
     let
-        quotient =
-            i // maxBase
+        q =
+            i // defaultBase
 
-        rem =
-            Basics.rem i maxBase
+        r =
+            Basics.rem i defaultBase
 
         acc_ =
-            rem :: acc
+            r :: acc
     in
-        if quotient == 0 then
+        if q == 0 then
             List.reverse acc_
         else
-            magnitudeFromInt quotient acc_
+            magnitudeFromInt q acc_
 
 
 fromString : String -> Maybe Integer
@@ -109,13 +109,12 @@ validateString s =
         hasValidChars s =
             String.all (\c -> c == '-' || Char.isDigit c) s
 
-        hasSignAtStart : String -> Bool
-        hasSignAtStart s =
-            (String.indices "-" s)
-                == [ 0 ]
-                || (s |> String.filter (\c -> c == '-') |> String.isEmpty)
+        hasSignOnlyAtBeginning : String -> Bool
+        hasSignOnlyAtBeginning s =
+            (String.startsWith "-" s)
+                || (s |> String.filter (\c -> c == '-') >> String.isEmpty)
     in
-        if (hasValidChars s) && (hasSignAtStart s) then
+        if (hasValidChars s) && (hasSignOnlyAtBeginning s) then
             Just s
         else
             Nothing
@@ -126,7 +125,7 @@ fromString_ s =
     let
         ( sign, num ) =
             if String.startsWith "-" s then
-                ( Negative, s |> String.dropLeft 1 |> trimLeadingZeroFromStr )
+                ( Negative, s |> String.dropLeft 1 >> trimLeadingZeroFromStr )
             else
                 ( Positive, trimLeadingZeroFromStr s )
     in
@@ -255,8 +254,8 @@ addMagnitudes m1 m2 =
 normalizeMagnitude : Magnitude -> Magnitude
 normalizeMagnitude m =
     let
-        folder : Digit -> ( Digit, Magnitude ) -> ( Digit, Magnitude )
-        folder d ( prevCarry, acc ) =
+        normalizeDigit : Digit -> ( Digit, Magnitude ) -> ( Digit, Magnitude )
+        normalizeDigit d ( prevCarry, acc ) =
             let
                 sum =
                     (d + prevCarry)
@@ -265,10 +264,10 @@ normalizeMagnitude m =
                     if sum < 0 then
                         -1
                     else
-                        sum // maxBase
+                        sum // defaultBase
 
                 d_ =
-                    sum % maxBase
+                    sum % defaultBase
             in
                 ( carry, d_ :: acc )
 
@@ -289,7 +288,7 @@ normalizeMagnitude m =
                             c :: m
     in
         m
-            |> List.foldl folder ( 0, [] )
+            |> List.foldl normalizeDigit ( 0, [] )
             |> handleFinalCarry
             |> List.reverse
             |> trimLeadingZeroFromMag
@@ -357,34 +356,34 @@ multiplyMagnitudes m1 m2 =
             |> normalizeMagnitude
 
 
-safeDiv : Integer -> Integer -> Maybe Integer
-safeDiv dividend divisor =
-    safeDivmod dividend divisor
-        |> Maybe.map Tuple.first
-
-
-div : Integer -> Integer -> Integer
+div : Integer -> Integer -> Maybe Integer
 div dividend divisor =
-    safeDivmod dividend divisor
+    divmod dividend divisor
+        |> Maybe.map Tuple.first
+
+
+unsafeDiv : Integer -> Integer -> Integer
+unsafeDiv dividend divisor =
+    divmod dividend divisor
         |> Maybe.map Tuple.first
         |> Maybe.withDefault (Zero)
 
 
-safeRem : Integer -> Integer -> Maybe Integer
-safeRem dividend divisor =
-    safeDivmod dividend divisor
+rem : Integer -> Integer -> Maybe Integer
+rem dividend divisor =
+    divmod dividend divisor
         |> Maybe.map Tuple.second
 
 
-rem : Integer -> Integer -> Integer
-rem dividend divisor =
-    safeDivmod dividend divisor
+unsafeRem : Integer -> Integer -> Integer
+unsafeRem dividend divisor =
+    divmod dividend divisor
         |> Maybe.map Tuple.second
         |> Maybe.withDefault (Zero)
 
 
-safeDivmod : Integer -> Integer -> Maybe ( Integer, Integer )
-safeDivmod dividend divisor =
+divmod : Integer -> Integer -> Maybe ( Integer, Integer )
+divmod dividend divisor =
     case ( dividend, divisor ) of
         ( Zero, _ ) ->
             Just ( Zero, Zero )
@@ -434,9 +433,9 @@ adjustSign dividend divisor ( q, r ) =
             ( q, negate r )
 
 
-divmod : Integer -> Integer -> ( Integer, Integer )
-divmod dividend divisor =
-    safeDivmod dividend divisor
+unsafeDivmod : Integer -> Integer -> ( Integer, Integer )
+unsafeDivmod dividend divisor =
+    divmod dividend divisor
         |> Maybe.withDefault ( Zero, Zero )
 
 
@@ -455,7 +454,7 @@ divmod_ dividend divisor qAcc prevR =
                     add d (shiftRightBy 1 prevR)
 
                 ( q, rem ) =
-                    divmodHelper dividend_ divisor maxBase Zero
+                    divmodHelper dividend_ divisor defaultBase Zero
 
                 qAcc_ =
                     add q (shiftRightBy 1 qAcc)
@@ -478,11 +477,11 @@ headAndTail i =
                     [] ->
                         ( Zero, Zero )
 
-                    rd :: [] ->
-                        ( fromInt rd, Zero )
+                    d :: [] ->
+                        ( fromInt d, Zero )
 
-                    rd :: rds ->
-                        ( fromInt rd, Integer s (List.reverse rds) )
+                    d :: ds ->
+                        ( fromInt d, Integer s (List.reverse ds) )
 
 
 shiftRightBy : Int -> Integer -> Integer
@@ -499,7 +498,7 @@ shiftRightBy n i =
 
 
 divmodHelper : Integer -> Integer -> Digit -> Integer -> ( Integer, Integer )
-divmodHelper dividend divisor normalizer acc =
+divmodHelper dividend divisor divExpediter acc =
     case compare dividend divisor of
         LT ->
             ( acc, dividend )
@@ -508,19 +507,19 @@ divmodHelper dividend divisor normalizer acc =
             ( add acc (fromInt 1), Zero )
 
         GT ->
-            case compare dividend (mul divisor (fromInt normalizer)) of
+            case compare dividend (mul divisor (fromInt divExpediter)) of
                 LT ->
-                    divmodHelper dividend divisor (normalizer // 2) acc
+                    divmodHelper dividend divisor (divExpediter // 2) acc
 
                 EQ ->
-                    ( add acc (fromInt normalizer), Zero )
+                    ( add acc (fromInt divExpediter), Zero )
 
                 GT ->
                     let
                         dividend_ =
-                            sub dividend (mul divisor (fromInt normalizer))
+                            sub dividend (mul divisor (fromInt divExpediter))
                     in
-                        divmodHelper dividend_ divisor normalizer (add acc (fromInt normalizer))
+                        divmodHelper dividend_ divisor divExpediter (add acc (fromInt divExpediter))
 
 
 
@@ -543,8 +542,7 @@ toString i =
 
                 num =
                     m
-                        |> List.map Basics.toString
-                        |> List.map (String.padLeft 7 '0')
+                        |> List.map (Basics.toString >> (String.padLeft 7 '0'))
                         |> List.foldl (++) ""
                         |> trimLeadingZeroFromStr
             in
@@ -552,7 +550,7 @@ toString i =
 
 
 trimLeadingZeroFromStr : String -> String
-trimLeadingZeroFromStr s =
+trimLeadingZeroFromStr =
     String.foldl
         (\c cs ->
             if c == '0' && cs == "" then
@@ -561,8 +559,7 @@ trimLeadingZeroFromStr s =
                 String.cons c cs
         )
         ""
-        s
-        |> String.reverse
+        >> String.reverse
 
 
 

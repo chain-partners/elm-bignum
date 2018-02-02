@@ -11,7 +11,6 @@ module Decimal
         , mul
         , safeDiv
         , negate
-        , trimTrailingZero
         , abs
         , compare
         , lt
@@ -97,7 +96,7 @@ getSigExpFromInteger ( i, e ) =
             Integer.fromInt 10
 
         ( q, r ) =
-            Integer.divmod i ten
+            Integer.unsafeDivmod i ten
 
         z =
             Integer.fromInt 0
@@ -396,7 +395,7 @@ safeDiv_ s1 s2 ( s, e ) =
                     Integer.fromInt 10
 
                 ( q, r ) =
-                    Integer.divmod s1 s2
+                    Integer.unsafeDivmod s1 s2
 
                 s_ =
                     Integer.add (Integer.mul s digit) q

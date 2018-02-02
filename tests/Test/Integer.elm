@@ -12,11 +12,17 @@ import Lazy.List exposing (empty, (:::))
 intString : Fuzzer String
 intString =
     let
-        -- Generates string between 10 ^ 42 and 10 ^ 50
+        numBuilder : Int -> Random.Generator String
+        numBuilder i =
+            Random.list i (Random.int 0 Random.maxInt)
+                |> Random.map
+                    (List.map Basics.toString
+                        >> List.foldr (++) ""
+                    )
+
         num =
-            Random.list 5 (Random.int 0 Random.maxInt)
-                |> Random.map (List.map Basics.toString)
-                |> Random.map (List.foldr (++) "")
+            Random.choices
+                (List.range 1 5 |> List.map numBuilder)
 
         sign =
             Random.choice "" "-"
@@ -91,9 +97,7 @@ suite =
             , fuzz2 maxIntRange maxIntRange "should have same result for division as Int" <|
                 \i1 i2 ->
                     Expect.equal
-                        (safeDiv (fromInt i1)
-                            (fromInt i2)
-                        )
+                        (div (fromInt i1) (fromInt i2))
                         (Just (fromInt (i1 // i2)))
             , fuzz2 maxIntRange nonZeroInt "should have same result for divmod as Int" <|
                 \i1 i2 ->
@@ -102,7 +106,7 @@ suite =
                             Just ( fromInt (i1 // i2), fromInt (Basics.rem i1 i2) )
 
                         integerDivmod =
-                            safeDivmod (fromInt i1) (fromInt i2)
+                            divmod (fromInt i1) (fromInt i2)
                     in
                         Expect.equal intDivmod integerDivmod
             ]
@@ -134,10 +138,7 @@ suite =
                             fromString i3
                     in
                         Expect.equal (Maybe.map2 add (Maybe.map2 add a b) c)
-                            (Maybe.map2 add
-                                a
-                                (Maybe.map2 add b c)
-                            )
+                            (Maybe.map2 add a (Maybe.map2 add b c))
             , fuzz intString "should have identity property" <|
                 \i ->
                     let
@@ -174,9 +175,9 @@ suite =
                             fromString i
 
                         b =
-                            fromInt 0
+                            fromString "0"
                     in
-                        Expect.equal (Maybe.map (flip sub b) a) a
+                        Expect.equal (Maybe.map2 sub a b) a
             , fuzz intString "should have inverse" <|
                 \i ->
                     let
@@ -212,10 +213,7 @@ suite =
                             fromString i3
                     in
                         Expect.equal (Maybe.map2 mul (Maybe.map2 mul a b) c)
-                            (Maybe.map2 mul
-                                a
-                                (Maybe.map2 mul b c)
-                            )
+                            (Maybe.map2 mul a (Maybe.map2 mul b c))
             , fuzz intString "should have identity property" <|
                 \i ->
                     let
@@ -239,12 +237,9 @@ suite =
                             fromString i3
                     in
                         Expect.equal (Maybe.map2 mul a (Maybe.map2 add b c))
-                            (Maybe.map2 add
-                                (Maybe.map2 mul a b)
-                                (Maybe.map2 mul a c)
-                            )
+                            (Maybe.map2 add (Maybe.map2 mul a b) (Maybe.map2 mul a c))
             ]
-        , describe "safeDivmod"
+        , describe "divmod"
             [ fuzz intString "should have identity property" <|
                 \i ->
                     let
@@ -255,9 +250,9 @@ suite =
                             fromInt 1
 
                         expected =
-                            Maybe.map (flip (,) (fromInt 0)) a
+                            Maybe.map2 (,) a (fromString "0")
                     in
-                        Expect.equal (Maybe.andThen (flip safeDivmod b) a) expected
+                        Expect.equal (Maybe.andThen (flip divmod b) a) expected
             , describe "should have zero-related properties"
                 [ fuzz intString "dividing zero yields zero" <|
                     \i ->
@@ -268,7 +263,7 @@ suite =
                             b =
                                 fromInt 0
                         in
-                            Expect.equal (Maybe.andThen (safeDivmod b) a) (Just ( b, b ))
+                            Expect.equal (Maybe.andThen (divmod b) a) (Just ( b, b ))
                 , fuzz intString "dividing with zero yields Nothing" <|
                     \i ->
                         let
@@ -278,7 +273,7 @@ suite =
                             b =
                                 fromInt 0
                         in
-                            Expect.equal (Maybe.andThen (flip safeDivmod b) a) Nothing
+                            Expect.equal (Maybe.andThen (flip divmod b) a) Nothing
                 ]
             , fuzz2 intString intString "should produce valid quotient and remainder" <|
                 \i1 i2 ->
@@ -290,7 +285,7 @@ suite =
                             fromString i2
 
                         result =
-                            join (Maybe.map2 safeDivmod a b)
+                            join (Maybe.map2 divmod a b)
                     in
                         case result of
                             Nothing ->
@@ -302,7 +297,7 @@ suite =
         , describe "abs"
             [ fuzz intString "abs i should be larger than or equal to i" <|
                 \i ->
-                    case (Maybe.map2 gte (Maybe.map Integer.abs (fromString i)) (fromString i)) of
+                    case (Maybe.map2 gte (i |> fromString >> Maybe.map Integer.abs) (fromString i)) of
                         Just True ->
                             Expect.pass
 
@@ -318,8 +313,7 @@ suite =
 
                         integer_ =
                             integer
-                                |> Maybe.map Integer.negate
-                                |> Maybe.map Integer.negate
+                                |> Maybe.map (Integer.negate >> Integer.negate)
                     in
                         Expect.equal integer integer_
             ]
