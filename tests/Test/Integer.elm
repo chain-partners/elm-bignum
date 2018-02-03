@@ -2,17 +2,26 @@ module Test.Integer exposing (..)
 
 import Expect exposing (Expectation)
 import Fuzz exposing (Fuzzer, int, intRange, custom)
-import Random.Pcg as Random
+import Random.Pcg as Random exposing (Generator)
 import Test exposing (..)
 import Integer exposing (..)
-import Shrink
+import Shrink exposing (Shrinker)
 import Lazy.List exposing (empty, (:::))
 
 
 intString : Fuzzer String
 intString =
+    custom intStringGenerator intStringShrinker
+
+
+intStringGenerator : Generator String
+intStringGenerator =
     let
-        numBuilder : Int -> Random.Generator String
+        num =
+            Random.choices
+                (List.range 1 5 |> List.map numBuilder)
+
+        numBuilder : Int -> Generator String
         numBuilder i =
             Random.list i (Random.int 0 Random.maxInt)
                 |> Random.map
@@ -20,27 +29,23 @@ intString =
                         >> List.foldr (++) ""
                     )
 
-        num =
-            Random.choices
-                (List.range 1 5 |> List.map numBuilder)
-
         sign =
             Random.choice "" "-"
+    in
+        Random.map2 (++) sign num
 
-        generator =
-            Random.map2 (++) sign num
 
+intStringShrinker : Shrinker String
+intStringShrinker s =
+    let
         baseInts =
             List.range -9 9
                 |> List.map Basics.toString
-
-        shrinker generator =
-            if List.member generator baseInts then
-                empty
-            else
-                (String.dropRight 1 generator) ::: empty
     in
-        custom generator shrinker
+        if List.member s baseInts then
+            empty
+        else
+            (String.dropRight 1 s) ::: empty
 
 
 join : Maybe (Maybe a) -> Maybe a

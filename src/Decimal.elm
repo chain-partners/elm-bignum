@@ -9,7 +9,8 @@ module Decimal
         , add
         , sub
         , mul
-        , safeDiv
+        , div
+        , unsafeDiv
         , negate
         , abs
         , compare
@@ -121,7 +122,7 @@ fromString s =
         _ ->
             s
                 |> validateString
-                |> Maybe.andThen parseString
+                |> Maybe.andThen fromString_
 
 
 validateString : String -> Maybe String
@@ -150,8 +151,8 @@ isSeparator c =
     c == '.' || c == ','
 
 
-parseString : String -> Maybe Decimal
-parseString s =
+fromString_ : String -> Maybe Decimal
+fromString_ s =
     let
         sepIndex =
             (String.indices "." s)
@@ -179,7 +180,7 @@ parseString s =
 
                     i =
                         s_
-                            |> String.filter (isSeparator >> not)
+                            |> String.filter (not << isSeparator)
                             |> Integer.fromString
                 in
                     if i == Just (Integer.fromInt 0) then
@@ -344,8 +345,8 @@ mul d1 d2 =
                 renormalizeDecimal d_
 
 
-safeDiv : Decimal -> Decimal -> Maybe Decimal
-safeDiv d1 d2 =
+div : Decimal -> Decimal -> Maybe Decimal
+div d1 d2 =
     case ( d1, d2 ) of
         ( Zero, _ ) ->
             Just Zero
@@ -355,7 +356,7 @@ safeDiv d1 d2 =
 
         ( Decimal s1 e1, Decimal s2 e2 ) ->
             let
-                startingExp =
+                startingE =
                     e1 - e2
 
                 zeroInt =
@@ -365,7 +366,7 @@ safeDiv d1 d2 =
                     Integer.lt s1 zeroInt == Integer.lt s2 zeroInt
 
                 ( s, e ) =
-                    safeDiv_ (Integer.abs s1) (Integer.abs s2) ( zeroInt, startingExp )
+                    div_ (Integer.abs s1) (Integer.abs s2) ( zeroInt, startingE )
 
                 s_ =
                     if isPositive then
@@ -376,8 +377,8 @@ safeDiv d1 d2 =
                 Just (renormalizeDecimal (Decimal s_ e))
 
 
-safeDiv_ : Significand -> Significand -> ( Significand, Exponent ) -> ( Significand, Exponent )
-safeDiv_ s1 s2 ( s, e ) =
+div_ : Significand -> Significand -> ( Significand, Exponent ) -> ( Significand, Exponent )
+div_ s1 s2 ( s, e ) =
     let
         hasNoRemainder : Significand -> Bool
         hasNoRemainder s =
@@ -406,7 +407,13 @@ safeDiv_ s1 s2 ( s, e ) =
                 s1_ =
                     Integer.mul r digit
             in
-                safeDiv_ s1_ s2 ( s_, e_ )
+                div_ s1_ s2 ( s_, e_ )
+
+
+unsafeDiv : Decimal -> Decimal -> Decimal
+unsafeDiv d1 d2 =
+    div d1 d2
+        |> Maybe.withDefault (fromInt 0)
 
 
 
@@ -448,18 +455,32 @@ compare d1 d2 =
         ( Decimal s1 e1, Decimal s2 e2 ) ->
             case Basics.compare e1 e2 of
                 GT ->
-                    Integer.compare (Integer.mul s1 (Integer.fromInt (10 ^ (e1 - e2)))) s2
+                    let
+                        normalizer =
+                            "1"
+                                ++ (String.repeat (e1 - e2) "0")
+                                |> Integer.fromString
+                                |> Maybe.withDefault (Integer.fromInt 0)
+                    in
+                        Integer.compare (Integer.mul s1 normalizer) s2
 
                 EQ ->
                     Integer.compare s1 s2
 
                 LT ->
-                    Integer.compare s1 (Integer.mul s2 (Integer.fromInt (10 ^ (e2 - e1))))
+                    let
+                        normalizer =
+                            "1"
+                                ++ (String.repeat (e2 - e1) "0")
+                                |> Integer.fromString
+                                |> Maybe.withDefault (Integer.fromInt 0)
+                    in
+                        Integer.compare s1 (Integer.mul s2 normalizer)
 
 
 lt : Decimal -> Decimal -> Bool
-lt i1 i2 =
-    case compare i1 i2 of
+lt d1 d2 =
+    case compare d1 d2 of
         LT ->
             True
 
@@ -468,8 +489,8 @@ lt i1 i2 =
 
 
 gt : Decimal -> Decimal -> Bool
-gt i1 i2 =
-    case compare i1 i2 of
+gt d1 d2 =
+    case compare d1 d2 of
         GT ->
             True
 
@@ -478,8 +499,8 @@ gt i1 i2 =
 
 
 lte : Decimal -> Decimal -> Bool
-lte i1 i2 =
-    case compare i1 i2 of
+lte d1 d2 =
+    case compare d1 d2 of
         LT ->
             True
 
@@ -491,8 +512,8 @@ lte i1 i2 =
 
 
 gte : Decimal -> Decimal -> Bool
-gte i1 i2 =
-    case compare i1 i2 of
+gte d1 d2 =
+    case compare d1 d2 of
         GT ->
             True
 
@@ -504,8 +525,8 @@ gte i1 i2 =
 
 
 eq : Decimal -> Decimal -> Bool
-eq i1 i2 =
-    case compare i1 i2 of
+eq d1 d2 =
+    case compare d1 d2 of
         EQ ->
             True
 

@@ -24,49 +24,37 @@ decimalStringGenerator : Generator String
 decimalStringGenerator =
     let
         int =
-            Random.list 2 (Random.int 0 Random.maxInt)
-                |> Random.map (List.map Basics.toString)
-                |> Random.map (List.foldr (++) "")
+            Random.choices (List.range 1 2 |> List.map numBuilder)
 
         fraction =
-            Random.list 2 (Random.int 0 Random.maxInt)
-                |> Random.map (List.map Basics.toString)
-                |> Random.map (List.foldr (++) "")
+            Random.choices (List.range 1 2 |> List.map numBuilder)
+
+        numBuilder : Int -> Generator String
+        numBuilder i =
+            Random.list i (Random.int 0 Random.maxInt)
+                |> Random.map
+                    (List.map Basics.toString
+                        >> List.foldr (++) ""
+                    )
 
         sign =
             Random.choice "" "-"
     in
-        Random.map2 (++) (Random.constant ".") fraction
-            |> Random.map2 (++) int
-            |> Random.map2 (++) sign
+        Random.map2 (++) sign int
+            |> Random.map2 (flip (++)) (Random.constant ".")
+            |> Random.map2 (flip (++)) fraction
             |> Random.map trimTrailingZero
 
 
 decimalStringShrinker : Shrinker String
 decimalStringShrinker s =
     let
-        isBaseValue : String -> Bool
-        isBaseValue s =
+        isMinimalCase : String -> Bool
+        isMinimalCase s =
             s
                 |> String.filter Char.isDigit
                 |> String.length
                 |> flip (<=) 2
-
-        baseValues : List String
-        baseValues =
-            let
-                ints =
-                    List.range -9 9
-                        |> List.map toFloat
-
-                floats =
-                    List.range -9 9
-                        |> List.map toFloat
-                        |> List.map (flip (/) 10)
-            in
-                List.append ints floats
-                    |> List.map Basics.toString
-                    |> (::) "0.0"
 
         shrinkNum : String -> String
         shrinkNum s =
@@ -84,21 +72,21 @@ decimalStringShrinker s =
         sepIndex =
             String.indexes "." num |> List.head
 
-        ( int, fraction ) =
+        ( i, f ) =
             case sepIndex of
                 Nothing ->
                     ( num, "" )
 
-                Just i ->
-                    ( String.left i num, String.dropLeft (i + 1) num )
+                Just index ->
+                    ( String.left index num, String.dropLeft (index + 1) num )
 
         s_ =
-            if String.isEmpty fraction then
-                sign ++ (shrinkNum int)
+            if String.isEmpty f then
+                sign ++ (shrinkNum i)
             else
-                (sign ++ (shrinkNum int)) ++ ("." ++ (shrinkNum fraction))
+                (sign ++ (shrinkNum i)) ++ ("." ++ (shrinkNum f))
     in
-        if isBaseValue s then
+        if isMinimalCase s then
             empty
         else
             s_ ::: empty
@@ -132,27 +120,24 @@ suite =
         [ describe "fromInt"
             [ fuzz maxIntRange "should create correct Decimal" <|
                 \i ->
-                    Expect.equal (Decimal.toString << fromInt <| i) (Basics.toString i)
+                    Expect.equal (i |> fromInt >> Decimal.toString) (Basics.toString i)
             ]
         , describe "fromInteger"
             [ fuzz intString "should create correct Decimal" <|
                 \i ->
                     let
-                        maybeInteger =
+                        integer =
                             Integer.fromString i
 
-                        maybeDecimal =
-                            Maybe.map fromInteger maybeInteger
+                        decimal =
+                            Maybe.map fromInteger integer
                     in
-                        Expect.equal (Maybe.map Decimal.toString maybeDecimal)
-                            (Maybe.map Integer.toString
-                                maybeInteger
-                            )
+                        Expect.equal (Maybe.map Decimal.toString decimal) (Maybe.map Integer.toString integer)
             ]
         , describe "fromFloat"
             [ fuzz (floatRange (toFloat Random.minInt) (toFloat Random.maxInt)) "should create correct Decimal" <|
                 \f ->
-                    Expect.equal (Decimal.toString << fromFloat <| f) (Basics.toString f)
+                    Expect.equal (f |> fromFloat >> Decimal.toString) (Basics.toString f)
             ]
         , describe "fromString"
             [ fuzz decimalString "should create correct Decimal" <|
@@ -293,7 +278,7 @@ suite =
                                 (Maybe.map2 mul a c)
                             )
             ]
-        , describe "safeDiv"
+        , describe "div"
             [ fuzz decimalString "should have identity property" <|
                 \d ->
                     let
@@ -303,7 +288,7 @@ suite =
                         b =
                             fromInt 1
                     in
-                        Expect.equal (Maybe.andThen (flip safeDiv b) a) a
+                        Expect.equal (Maybe.andThen (flip div b) a) a
             , describe "should have zero-related properties"
                 [ fuzz decimalString "dividing zero yields zero" <|
                     \d ->
@@ -314,7 +299,7 @@ suite =
                             b =
                                 fromInt 0
                         in
-                            Expect.equal (Maybe.andThen (safeDiv b) a) (Just b)
+                            Expect.equal (Maybe.andThen (div b) a) (Just b)
                 , fuzz decimalString "dividing with zero yields Nothing" <|
                     \d ->
                         let
@@ -324,9 +309,9 @@ suite =
                             b =
                                 fromInt 0
                         in
-                            Expect.equal (Maybe.andThen (flip safeDiv b) a) Nothing
+                            Expect.equal (Maybe.andThen (flip div b) a) Nothing
                 ]
-            , fuzz2 decimalString decimalString "should produce sufficiently precise quotient" <|
+            , fuzz2 decimalString decimalString "should produce sufficiently precise result" <|
                 \d1 d2 ->
                     let
                         a =
@@ -335,19 +320,19 @@ suite =
                         b =
                             fromString d2
 
-                        result =
-                            join (Maybe.map2 safeDiv a b)
+                        maybeResult =
+                            join (Maybe.map2 div a b)
                     in
                         case result of
                             Nothing ->
                                 Expect.fail "was given invalid string for generating Decimal"
 
-                            Just quotient ->
+                            Just result ->
                                 let
                                     product =
-                                        Maybe.map (mul quotient) b
+                                        Maybe.map (mul result) b
                                 in
-                                    if (String.length << Decimal.toString <| quotient) < 20 then
+                                    if (result |> Decimal.toString >> String.length) < 20 then
                                         Expect.equal product a
                                     else
                                         -- TODO: add test for dynamic comparison for dynamic tolerance
@@ -356,15 +341,15 @@ suite =
                                                 Maybe.map Decimal.abs
                                                     (Maybe.map2 sub a product)
 
-                                            maxDiff =
+                                            tolerance =
                                                 Decimal.fromString ("0." ++ (String.repeat 1 "0") ++ "1")
                                         in
                                             Expect.pass
             ]
         , describe "abs"
             [ fuzz decimalString "abs f should be larger than or equal to f" <|
-                \f ->
-                    case (Maybe.map2 gte (Maybe.map Decimal.abs (fromString f)) (fromString f)) of
+                \d ->
+                    case (Maybe.map2 gte (Maybe.map Decimal.abs (fromString d)) (fromString d)) of
                         Just True ->
                             Expect.pass
 
@@ -373,17 +358,16 @@ suite =
             ]
         , describe "negate"
             [ fuzz decimalString "should return original i when applied twice" <|
-                \f ->
+                \d ->
                     let
-                        float =
-                            fromString f
+                        decimal =
+                            fromString d
 
-                        float_ =
-                            float
-                                |> Maybe.map Decimal.negate
-                                |> Maybe.map Decimal.negate
+                        decimal_ =
+                            decimal
+                                |> Maybe.map (Decimal.negate >> Decimal.negate)
                     in
-                        Expect.equal float float_
+                        Expect.equal decimal decimal_
             ]
         , describe "compare"
             [ fuzz2 decimalString decimalString "should return correct order" <|
