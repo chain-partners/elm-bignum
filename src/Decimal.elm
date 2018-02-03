@@ -90,29 +90,6 @@ fromInteger i =
                 Decimal i_ e
 
 
-getSigExpFromInteger : ( Integer, Int ) -> ( Integer, Int )
-getSigExpFromInteger ( i, e ) =
-    let
-        ten =
-            Integer.fromInt 10
-
-        ( q, r ) =
-            Integer.unsafeDivmod i ten
-
-        z =
-            Integer.fromInt 0
-    in
-        case ( q == z, r == z ) of
-            ( True, True ) ->
-                ( i, e )
-
-            ( _, True ) ->
-                getSigExpFromInteger ( q, e + 1 )
-
-            _ ->
-                ( i, e )
-
-
 fromString : String -> Maybe Decimal
 fromString s =
     case s of
@@ -134,11 +111,11 @@ validateString s =
 
         validateSeparator : String -> Bool
         validateSeparator s =
-            (s |> String.filter isSeparator |> String.length) <= 1
+            (s |> String.filter ((==) '.') |> String.length) <= 1
 
         validateDigits : String -> Bool
         validateDigits s =
-            String.all (\c -> isSeparator c || Char.isDigit c || c == '-') s
+            String.all (\c -> c == '.' || Char.isDigit c || c == '-') s
     in
         if validateSign s && validateDigits s && validateSeparator s then
             Just s
@@ -146,18 +123,11 @@ validateString s =
             Nothing
 
 
-isSeparator : Char -> Bool
-isSeparator c =
-    c == '.' || c == ','
-
-
 fromString_ : String -> Maybe Decimal
 fromString_ s =
     let
         sepIndex =
-            (String.indices "." s)
-                ++ (String.indices "," s)
-                |> List.head
+            List.head (String.indices "." s)
     in
         case sepIndex of
             Nothing ->
@@ -180,7 +150,7 @@ fromString_ s =
 
                     i =
                         s_
-                            |> String.filter (not << isSeparator)
+                            |> String.filter (not << ((==) '.'))
                             |> Integer.fromString
                 in
                     if i == Just (Integer.fromInt 0) then
@@ -303,20 +273,6 @@ add d1 d2 =
                     renormalizeDecimal (Decimal s e)
 
 
-renormalizeDecimal : Decimal -> Decimal
-renormalizeDecimal d =
-    case d of
-        Zero ->
-            Zero
-
-        Decimal s e ->
-            let
-                ( s_, e_ ) =
-                    getSigExpFromInteger ( s, e )
-            in
-                Decimal s_ e_
-
-
 sub : Decimal -> Decimal -> Decimal
 sub d1 d2 =
     add d1 (negate d2)
@@ -417,7 +373,7 @@ unsafeDiv d1 d2 =
 
 
 
--- Sign and other stuff
+-- Sign modification functions
 
 
 negate : Decimal -> Decimal
@@ -438,6 +394,10 @@ abs d =
 
         Decimal s e ->
             Decimal (Integer.abs s) e
+
+
+
+-- Comparison functions
 
 
 compare : Decimal -> Decimal -> Order
@@ -532,3 +492,44 @@ eq d1 d2 =
 
         _ ->
             False
+
+
+
+-- Shared helper functions
+
+
+renormalizeDecimal : Decimal -> Decimal
+renormalizeDecimal d =
+    case d of
+        Zero ->
+            Zero
+
+        Decimal s e ->
+            let
+                ( s_, e_ ) =
+                    getSigExpFromInteger ( s, e )
+            in
+                Decimal s_ e_
+
+
+getSigExpFromInteger : ( Integer, Int ) -> ( Integer, Int )
+getSigExpFromInteger ( i, e ) =
+    let
+        ten =
+            Integer.fromInt 10
+
+        ( q, r ) =
+            Integer.unsafeDivmod i ten
+
+        z =
+            Integer.fromInt 0
+    in
+        case ( q == z, r == z ) of
+            ( True, True ) ->
+                ( i, e )
+
+            ( _, True ) ->
+                getSigExpFromInteger ( q, e + 1 )
+
+            _ ->
+                ( i, e )

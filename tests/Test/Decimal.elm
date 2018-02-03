@@ -12,9 +12,6 @@ import Integer
 import Test.Integer exposing (intString, maxIntRange)
 
 
--- Generates string with 10 ^ 20 integer and 10 ^ 20 fraction parts
-
-
 decimalString : Fuzzer String
 decimalString =
     custom decimalStringGenerator decimalStringShrinker
@@ -323,7 +320,7 @@ suite =
                         maybeResult =
                             join (Maybe.map2 div a b)
                     in
-                        case result of
+                        case maybeResult of
                             Nothing ->
                                 Expect.fail "was given invalid string for generating Decimal"
 
