@@ -19,10 +19,18 @@ module Decimal
         , gt
         , gte
         , eq
+        , round
+        , roundTo
+        , ceiling
+        , floor
+        , truncate
+        , roundWithContext
+        , RoundingMethod(..)
+        , RoundingContext
         )
 
-import Integer exposing (Integer)
 import Char
+import Data.Integer as Integer exposing (Integer)
 import Regex
 
 
@@ -492,6 +500,247 @@ eq d1 d2 =
 
         _ ->
             False
+
+
+
+-- Rounding
+
+
+type alias RoundingContext =
+    { e : Exponent
+    , method : RoundingMethod
+    }
+
+
+type RoundingMethod
+    = Down
+    | Up
+    | TowardsZero
+    | AwayFromZero
+    | HalfToEven
+
+
+round : Decimal -> Decimal
+round =
+    roundWithContext { e = 0, method = HalfToEven }
+
+
+roundTo : Exponent -> Decimal -> Decimal
+roundTo e =
+    roundWithContext { e = e, method = HalfToEven }
+
+
+floor : Decimal -> Decimal
+floor =
+    roundWithContext { e = 0, method = Down }
+
+
+ceiling : Decimal -> Decimal
+ceiling =
+    roundWithContext { e = 0, method = Up }
+
+
+truncate : Decimal -> Decimal
+truncate =
+    roundWithContext { e = 0, method = TowardsZero }
+
+
+roundWithContext : RoundingContext -> Decimal -> Decimal
+roundWithContext { e, method } d =
+    case d of
+        Zero ->
+            Zero
+
+        Decimal ds de ->
+            if e <= de then
+                d
+            else if e > (countDigits ds) + de + 1 then
+                Zero
+            else
+                let
+                    divisor =
+                        (10 ^ (e - de))
+                            |> Integer.fromInt
+
+                    ds_ =
+                        divRound method ds divisor
+                in
+                    if Integer.eq ds_ (Integer.fromInt 0) then
+                        Zero
+                    else
+                        Decimal ds_ e
+                            |> renormalizeDecimal
+
+
+divRound : RoundingMethod -> Integer -> Integer -> Integer
+divRound method i1 i2 =
+    case method of
+        Down ->
+            roundDown i1 i2
+
+        Up ->
+            roundUp i1 i2
+
+        TowardsZero ->
+            roundTowardsZero i1 i2
+
+        AwayFromZero ->
+            roundAwayFromZero i1 i2
+
+        HalfToEven ->
+            roundHalfToEven i1 i2
+
+
+roundHalfToEven : Integer -> Integer -> Integer
+roundHalfToEven i1 i2 =
+    let
+        ( q, r ) =
+            Integer.unsafeDivmod i1 i2
+
+        mod =
+            case Integer.compare (Integer.fromInt 2 |> Integer.mul r >> Integer.abs) (Integer.abs i2) of
+                LT ->
+                    Integer.fromInt 0
+
+                EQ ->
+                    if Integer.unsafeRem q (Integer.fromInt 2) /= Integer.fromInt 0 then
+                        case Integer.compare i1 (Integer.fromInt 0) of
+                            LT ->
+                                Integer.fromInt -1
+
+                            EQ ->
+                                Integer.fromInt 0
+
+                            GT ->
+                                Integer.fromInt 1
+                    else
+                        Integer.fromInt 0
+
+                GT ->
+                    case Integer.compare i1 (Integer.fromInt 0) of
+                        LT ->
+                            Integer.fromInt -1
+
+                        EQ ->
+                            Integer.fromInt 0
+
+                        GT ->
+                            Integer.fromInt 1
+    in
+        Integer.add q mod
+
+
+roundTowardsZero : Integer -> Integer -> Integer
+roundTowardsZero i1 i2 =
+    Integer.unsafeDivmod i1 i2
+        |> Tuple.first
+
+
+roundDown : Integer -> Integer -> Integer
+roundDown i1 i2 =
+    let
+        ( q, r ) =
+            Integer.unsafeDivmod i1 i2
+
+        z =
+            Integer.fromInt 0
+
+        isPositive =
+            (Integer.lt i1 z) == (Integer.lt i2 z)
+    in
+        if Integer.eq r z then
+            q
+        else
+            case Integer.compare q z of
+                LT ->
+                    Integer.add q (Integer.fromInt -1)
+
+                EQ ->
+                    if isPositive then
+                        q
+                    else
+                        Integer.add q (Integer.fromInt -1)
+
+                GT ->
+                    q
+
+
+roundUp : Integer -> Integer -> Integer
+roundUp i1 i2 =
+    let
+        ( q, r ) =
+            Integer.unsafeDivmod i1 i2
+
+        z =
+            Integer.fromInt 0
+
+        isPositive =
+            (Integer.lt i1 z) == (Integer.lt i2 z)
+    in
+        if Integer.eq r z then
+            q
+        else
+            case Integer.compare q z of
+                LT ->
+                    q
+
+                EQ ->
+                    if isPositive then
+                        Integer.add q (Integer.fromInt 1)
+                    else
+                        q
+
+                GT ->
+                    Integer.add q (Integer.fromInt 1)
+
+
+roundAwayFromZero : Integer -> Integer -> Integer
+roundAwayFromZero i1 i2 =
+    let
+        ( q, r ) =
+            Integer.unsafeDivmod i1 i2
+
+        z =
+            Integer.fromInt 0
+
+        isPositive =
+            (Integer.lt i1 z) == (Integer.lt i2 z)
+    in
+        if Integer.eq r z then
+            q
+        else
+            case Integer.compare q z of
+                LT ->
+                    Integer.add q (Integer.fromInt -1)
+
+                EQ ->
+                    if isPositive then
+                        Integer.add q (Integer.fromInt 1)
+                    else
+                        Integer.add q (Integer.fromInt -1)
+
+                GT ->
+                    Integer.add q (Integer.fromInt 1)
+
+
+countDigits : Integer -> Int
+countDigits i =
+    countDigits_ i 0
+
+
+countDigits_ : Integer -> Int -> Int
+countDigits_ i acc =
+    let
+        i_ =
+            Integer.unsafeDiv i (Integer.fromInt 10)
+
+        acc_ =
+            acc + 1
+    in
+        if Integer.eq (Integer.fromInt 0) i_ then
+            acc_
+        else
+            countDigits_ i_ acc_
 
 
 
