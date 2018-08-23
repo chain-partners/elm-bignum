@@ -2,10 +2,10 @@ module Test.Integer exposing (..)
 
 import Expect exposing (Expectation)
 import Fuzz exposing (Fuzzer, int, intRange, custom)
-import Random.Pcg as Random exposing (Generator)
-import Test exposing (..)
 import Integer exposing (..)
+import Random.Pcg as Random exposing (Generator)
 import Shrink exposing (Shrinker)
+import Test exposing (..)
 import Lazy.List exposing (empty, (:::))
 
 

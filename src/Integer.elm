@@ -3,6 +3,14 @@ module Integer
         ( Integer
         , fromInt
         , fromString
+        , zero
+        , one
+        , ten
+        , hundred
+        , thousand
+        , million
+        , billion
+        , zillion
         , add
         , sub
         , mul
@@ -24,6 +32,7 @@ module Integer
         )
 
 import Char
+import Regex
 
 
 -- Types
@@ -47,6 +56,10 @@ type alias Base =
     Int
 
 
+
+-- Magnitude is in Little Endian
+
+
 type alias Magnitude =
     List Digit
 
@@ -68,79 +81,58 @@ fromInt : Int -> Integer
 fromInt i =
     case Basics.compare i 0 of
         GT ->
-            Integer Positive (magnitudeFromInt i [])
+            Integer Positive (magnitudeFromInt i)
 
         EQ ->
             Zero
 
         LT ->
-            Integer Negative (magnitudeFromInt (Basics.abs i) [])
+            Integer Negative (magnitudeFromInt (Basics.abs i))
 
 
-magnitudeFromInt : Int -> Magnitude -> Magnitude
-magnitudeFromInt i acc =
+magnitudeFromInt : Int -> Magnitude
+magnitudeFromInt =
+    magnitudeFromInt_ []
+
+
+magnitudeFromInt_ : Magnitude -> Int -> Magnitude
+magnitudeFromInt_ acc i =
     let
         q =
             i // defaultBase
-
-        r =
-            Basics.rem i defaultBase
-
-        acc_ =
-            r :: acc
     in
         if q == 0 then
-            List.reverse acc_
+            List.reverse (i :: acc)
         else
-            magnitudeFromInt q acc_
+            magnitudeFromInt_ ((Basics.rem i defaultBase) :: acc) q
 
 
 fromString : String -> Maybe Integer
 fromString s =
-    s
-        |> validateString
-        |> Maybe.andThen fromString_
-
-
-validateString : String -> Maybe String
-validateString s =
-    let
-        hasValidChars : String -> Bool
-        hasValidChars s =
-            String.all (\c -> c == '-' || Char.isDigit c) s
-
-        hasSignOnlyAtBeginning : String -> Bool
-        hasSignOnlyAtBeginning s =
-            (String.startsWith "-" s)
-                || (s |> String.filter (\c -> c == '-') >> String.isEmpty)
-    in
-        if (hasValidChars s) && (hasSignOnlyAtBeginning s) then
-            Just s
-        else
-            Nothing
-
-
-fromString_ : String -> Maybe Integer
-fromString_ s =
-    let
-        ( sign, num ) =
-            if String.startsWith "-" s then
-                ( Negative, s |> String.dropLeft 1 >> trimLeadingZeroFromStr )
+    if isValidString s then
+        let
+            ( sign, num ) =
+                if String.startsWith "-" s then
+                    ( Negative, trimLeadingZeroFromStr (String.dropLeft 1 s) )
+                else
+                    ( Positive, trimLeadingZeroFromStr s )
+        in
+            if String.isEmpty num then
+                Just Zero
             else
-                ( Positive, trimLeadingZeroFromStr s )
-    in
-        if String.isEmpty num then
-            Just Zero
-        else
-            Maybe.map (Integer sign) (magnitudeFromString num)
+                Maybe.map (Integer sign) (magnitudeFromString num)
+    else
+        Nothing
+
+
+isValidString : String -> Bool
+isValidString =
+    Regex.contains (Regex.regex "^-?\\d+$")
 
 
 magnitudeFromString : String -> Maybe Magnitude
 magnitudeFromString s =
-    s
-        |> splitFromEndBy 7 []
-        |> List.map (String.toInt >> Result.toMaybe)
-        |> combine
+    combine (List.map (String.toInt >> Result.toMaybe) (splitFromEndBy 7 [] s))
 
 
 splitFromEndBy : Int -> List String -> String -> List String
@@ -170,6 +162,46 @@ combine =
                     Maybe.map ((::) i) acc
         )
         (Just [])
+
+
+zero : Integer
+zero =
+    Zero
+
+
+one : Integer
+one =
+    Integer Positive [ 1 ]
+
+
+ten : Integer
+ten =
+    Integer Positive [ 10 ]
+
+
+hundred : Integer
+hundred =
+    Integer Positive [ 100 ]
+
+
+thousand : Integer
+thousand =
+    Integer Positive [ 1000 ]
+
+
+million : Integer
+million =
+    Integer Positive [ 1000000 ]
+
+
+billion : Integer
+billion =
+    Integer Positive [ 0, 100 ]
+
+
+zillion : Integer
+zillion =
+    Integer Positive [ 0, 100000 ]
 
 
 
@@ -230,68 +262,65 @@ sub i1 i2 =
 
 addMagnitudes : Magnitude -> Magnitude -> Magnitude
 addMagnitudes m1 m2 =
-    let
-        zipMagnitudes : Magnitude -> Magnitude -> List ( Digit, Digit ) -> List ( Digit, Digit )
-        zipMagnitudes m1 m2 acc =
-            case ( m1, m2 ) of
-                ( [], [] ) ->
-                    acc
+    normalizeMagnitude (addMagnitudes_ m1 m2 [])
 
-                ( [], d :: ds ) ->
-                    zipMagnitudes [] ds (( 0, d ) :: acc)
 
-                ( d :: ds, [] ) ->
-                    zipMagnitudes ds [] (( d, 0 ) :: acc)
+addMagnitudes_ : Magnitude -> Magnitude -> Magnitude -> Magnitude
+addMagnitudes_ m1 m2 acc =
+    case ( m1, m2 ) of
+        ( [], [] ) ->
+            List.reverse acc
 
-                ( d1 :: ds1, d2 :: ds2 ) ->
-                    zipMagnitudes ds1 ds2 (( d1, d2 ) :: acc)
-    in
-        zipMagnitudes m1 m2 []
-            |> List.foldl (\( d1, d2 ) acc -> (d1 + d2) :: acc) []
-            |> normalizeMagnitude
+        ( [], _ ) ->
+            (List.reverse acc)
+                ++ m2
+
+        ( _, [] ) ->
+            (List.reverse acc)
+                ++ m1
+
+        ( d1 :: ds1, d2 :: ds2 ) ->
+            addMagnitudes_ ds1 ds2 (d1 + d2 :: acc)
 
 
 normalizeMagnitude : Magnitude -> Magnitude
 normalizeMagnitude m =
+    trimLeadingZeroFromMag (List.reverse (handleFinalCarry (List.foldl normalizeDigit ( 0, [] ) m)))
+
+
+normalizeDigit : Digit -> ( Digit, Magnitude ) -> ( Digit, Magnitude )
+normalizeDigit d ( prevCarry, acc ) =
     let
-        normalizeDigit : Digit -> ( Digit, Magnitude ) -> ( Digit, Magnitude )
-        normalizeDigit d ( prevCarry, acc ) =
-            let
-                sum =
-                    (d + prevCarry)
+        sum =
+            (d + prevCarry)
 
-                carry =
-                    if sum < 0 then
-                        -1
-                    else
-                        sum // defaultBase
-
-                d_ =
-                    sum % defaultBase
-            in
-                ( carry, d_ :: acc )
-
-        handleFinalCarry : ( Digit, Magnitude ) -> Magnitude
-        handleFinalCarry ( c, m ) =
-            if c == 0 then
-                m
+        carry =
+            if sum < 0 then
+                -1
             else
-                case m of
-                    -- this branch should not be reached
-                    [] ->
-                        []
+                sum // defaultBase
 
-                    d :: ds ->
-                        if d + c == 0 then
-                            ds
-                        else
-                            c :: m
+        d_ =
+            sum % defaultBase
     in
+        ( carry, d_ :: acc )
+
+
+handleFinalCarry : ( Digit, Magnitude ) -> Magnitude
+handleFinalCarry ( c, m ) =
+    if c == 0 then
         m
-            |> List.foldl normalizeDigit ( 0, [] )
-            |> handleFinalCarry
-            |> List.reverse
-            |> trimLeadingZeroFromMag
+    else
+        case m of
+            -- this branch should not be reached
+            [] ->
+                []
+
+            d :: ds ->
+                if d + c == 0 then
+                    ds
+                else
+                    c :: m
 
 
 mul : Integer -> Integer -> Integer
@@ -328,32 +357,32 @@ mul i1 i2 =
 
 multiplyMagnitudes : Magnitude -> Magnitude -> Magnitude
 multiplyMagnitudes m1 m2 =
-    let
-        calculatePartialProducts : Magnitude -> Magnitude -> List Magnitude
-        calculatePartialProducts m1 m2 =
-            List.map (\d -> List.map ((*) d) m1) m2
+    normalizeMagnitude (sumPartialProducts (addScaleToPartialProducts (calculatePartialProducts m1 m2)))
 
-        addScaleToPartialProducts : List Magnitude -> ( Int, List Magnitude )
-        addScaleToPartialProducts magList =
-            List.foldl
-                (\m ( digit, acc ) ->
-                    ( digit + 1
-                    , (List.append (List.repeat digit 0) m)
-                        :: acc
-                    )
+
+calculatePartialProducts : Magnitude -> Magnitude -> List Magnitude
+calculatePartialProducts m1 m2 =
+    List.map (\d -> List.map ((*) d) m1) m2
+
+
+addScaleToPartialProducts : List Magnitude -> List Magnitude
+addScaleToPartialProducts magList =
+    Tuple.second
+        (List.foldl
+            (\m ( digit, acc ) ->
+                ( digit + 1
+                , (List.append (List.repeat digit 0) m)
+                    :: acc
                 )
-                ( 0, [] )
-                magList
+            )
+            ( 0, [] )
+            magList
+        )
 
-        sumPartialProducts : List Magnitude -> Magnitude
-        sumPartialProducts magList =
-            List.foldl addMagnitudes [] magList
-    in
-        calculatePartialProducts m1 m2
-            |> addScaleToPartialProducts
-            |> Tuple.second
-            |> sumPartialProducts
-            |> normalizeMagnitude
+
+sumPartialProducts : List Magnitude -> Magnitude
+sumPartialProducts magList =
+    List.foldl addMagnitudes [] magList
 
 
 div : Integer -> Integer -> Maybe Integer
@@ -419,18 +448,18 @@ divmod dividend divisor =
 
 adjustSign : Integer -> Integer -> ( Integer, Integer ) -> ( Integer, Integer )
 adjustSign dividend divisor ( q, r ) =
-    case ( getSign dividend, getSign divisor ) of
-        ( Positive, Positive ) ->
-            ( q, r )
-
-        ( Positive, Negative ) ->
+    case ( dividend, divisor ) of
+        ( Integer Positive _, Integer Negative _ ) ->
             ( negate q, r )
 
-        ( Negative, Positive ) ->
+        ( Integer Negative _, Integer Positive _ ) ->
             ( negate q, negate r )
 
-        ( Negative, Negative ) ->
+        ( Integer Negative _, Integer Negative _ ) ->
             ( q, negate r )
+
+        _ ->
+            ( q, r )
 
 
 unsafeDivmod : Integer -> Integer -> ( Integer, Integer )
@@ -447,19 +476,19 @@ divmod_ dividend divisor qAcc prevR =
 
         _ ->
             let
-                ( d, ds ) =
+                ( firstDigit, remainingDigits ) =
                     headAndTail dividend
 
-                dividend_ =
-                    add d (shiftRightBy 1 prevR)
+                currentDividend =
+                    add firstDigit (shiftRightBy 1 prevR)
 
                 ( q, rem ) =
-                    divmodHelper dividend_ divisor defaultBase Zero
+                    divmodPartialDividend currentDividend divisor defaultBase Zero
 
                 qAcc_ =
                     add q (shiftRightBy 1 qAcc)
             in
-                divmod_ ds divisor qAcc_ rem
+                divmod_ remainingDigits divisor qAcc_ rem
 
 
 headAndTail : Integer -> ( Integer, Integer )
@@ -497,29 +526,33 @@ shiftRightBy n i =
                 shiftRightBy (n - 1) (Integer s (0 :: m))
 
 
-divmodHelper : Integer -> Integer -> Digit -> Integer -> ( Integer, Integer )
-divmodHelper dividend divisor divExpediter acc =
+divmodPartialDividend : Integer -> Integer -> Digit -> Integer -> ( Integer, Integer )
+divmodPartialDividend dividend divisor divExpediter acc =
     case compare dividend divisor of
         LT ->
             ( acc, dividend )
 
         EQ ->
-            ( add acc (fromInt 1), Zero )
+            ( add acc one, Zero )
 
         GT ->
-            case compare dividend (mul divisor (fromInt divExpediter)) of
-                LT ->
-                    divmodHelper dividend divisor (divExpediter // 2) acc
+            let
+                divisorTimesDivExpediter =
+                    mul divisor (fromInt divExpediter)
+            in
+                case compare dividend divisorTimesDivExpediter of
+                    LT ->
+                        divmodPartialDividend dividend divisor (divExpediter // 2) acc
 
-                EQ ->
-                    ( add acc (fromInt divExpediter), Zero )
+                    EQ ->
+                        ( add acc (fromInt divExpediter), Zero )
 
-                GT ->
-                    let
-                        dividend_ =
-                            sub dividend (mul divisor (fromInt divExpediter))
-                    in
-                        divmodHelper dividend_ divisor divExpediter (add acc (fromInt divExpediter))
+                    GT ->
+                        let
+                            dividend_ =
+                                sub dividend divisorTimesDivExpediter
+                        in
+                            divmodPartialDividend dividend_ divisor divExpediter (add acc (fromInt divExpediter))
 
 
 
@@ -541,25 +574,14 @@ toString i =
                         ""
 
                 num =
-                    m
-                        |> List.map (Basics.toString >> (String.padLeft 7 '0'))
-                        |> List.foldl (++) ""
-                        |> trimLeadingZeroFromStr
+                    trimLeadingZeroFromStr (List.foldl (++) "" (List.map (Basics.toString >> (String.padLeft 7 '0')) m))
             in
                 sign ++ num
 
 
 trimLeadingZeroFromStr : String -> String
 trimLeadingZeroFromStr =
-    String.foldl
-        (\c cs ->
-            if c == '0' && cs == "" then
-                ""
-            else
-                String.cons c cs
-        )
-        ""
-        >> String.reverse
+    Regex.replace Regex.All (Regex.regex "^0*") (\_ -> "")
 
 
 
@@ -572,8 +594,11 @@ negate i =
         Zero ->
             Zero
 
-        Integer s m ->
-            Integer (negateSign s) m
+        Integer Positive m ->
+            Integer Negative m
+
+        Integer Negative m ->
+            Integer Positive m
 
 
 abs : Integer -> Integer
@@ -738,38 +763,13 @@ compareMag_ m1 m2 =
                     LT
 
 
-negateSign : Sign -> Sign
-negateSign s =
-    case s of
-        Positive ->
-            Negative
-
-        Negative ->
-            Positive
-
-
 trimLeadingZeroFromMag : Magnitude -> Magnitude
-trimLeadingZeroFromMag m =
-    dropWhileEnd ((==) 0) m
-
-
-dropWhileEnd : (a -> Bool) -> List a -> List a
-dropWhileEnd p =
+trimLeadingZeroFromMag =
     List.foldr
         (\x xs ->
-            if p x && List.isEmpty xs then
+            if (x == 0) && List.isEmpty xs then
                 []
             else
                 x :: xs
         )
         []
-
-
-getSign : Integer -> Sign
-getSign i =
-    case i of
-        Integer Negative _ ->
-            Negative
-
-        _ ->
-            Positive
