@@ -30,7 +30,7 @@ module Decimal
         )
 
 import Char
-import Data.Integer as Integer exposing (Integer)
+import Integer as Integer exposing (Integer)
 import Regex
 
 
@@ -51,6 +51,15 @@ type Decimal
 
 
 
+-- Constants
+
+
+maxPrecision : Int
+maxPrecision =
+    -20
+
+
+
 -- Constructors
 
 
@@ -58,12 +67,15 @@ fromInt : Int -> Decimal
 fromInt i =
     let
         ( s, e ) =
-            getSigExpFromInt ( i, 0 )
+            getSigExpFromInt ( Basics.abs i, 0 )
 
         integer =
-            Integer.fromInt s
+            if i >= 0 then
+                Integer.fromInt s
+            else
+                Integer.negate (Integer.fromInt s)
     in
-        if integer == (Integer.fromInt 0) then
+        if integer == Integer.zero then
             Zero
         else
             Decimal integer e
@@ -84,18 +96,20 @@ getSigExpFromInt ( i, e ) =
 
 fromInteger : Integer -> Decimal
 fromInteger i =
-    let
-        z =
-            Integer.fromInt 0
-    in
-        if Integer.eq i z then
-            Zero
-        else
-            let
-                ( i_, e ) =
-                    getSigExpFromInteger ( i, 0 )
-            in
-                Decimal i_ e
+    if Integer.eq i Integer.zero then
+        Zero
+    else
+        let
+            s =
+                (Integer.toString i)
+
+            s_ =
+                trimTrailingZero (Integer.toString i)
+
+            e =
+                String.length s - String.length s_
+        in
+            Decimal (Maybe.withDefault Integer.zero (Integer.fromString s_)) e
 
 
 fromString : String -> Maybe Decimal
@@ -105,13 +119,14 @@ fromString s =
             Just Zero
 
         _ ->
-            s
-                |> validateString
-                |> Maybe.andThen fromString_
+            if isValidString s then
+                fromString_ s
+            else
+                Nothing
 
 
-validateString : String -> Maybe String
-validateString s =
+isValidString : String -> Bool
+isValidString s =
     let
         validateSign : String -> Bool
         validateSign s =
@@ -125,78 +140,54 @@ validateString s =
         validateDigits s =
             String.all (\c -> c == '.' || Char.isDigit c || c == '-') s
     in
-        if validateSign s && validateDigits s && validateSeparator s then
-            Just s
-        else
-            Nothing
+        validateSign s && validateDigits s && validateSeparator s
 
 
 fromString_ : String -> Maybe Decimal
 fromString_ s =
     let
-        sepIndex =
-            List.head (String.indices "." s)
+        parts =
+            String.split "." s
     in
-        case sepIndex of
-            Nothing ->
-                let
-                    ( sig, exp ) =
-                        getSigExpFromString s
-                in
-                    Maybe.map2 Decimal (Integer.fromString sig) (Just exp)
-
-            Just index ->
+        case parts of
+            i :: [] ->
                 let
                     s_ =
-                        trimTrailingZero s
+                        trimTrailingZero i
 
                     e =
-                        s_
-                            |> String.dropLeft (index + 1)
-                            |> String.length
-                            |> Basics.negate
-
-                    i =
-                        s_
-                            |> String.filter (not << ((==) '.'))
-                            |> Integer.fromString
+                        String.length i - String.length s_
                 in
-                    if i == Just (Integer.fromInt 0) then
+                    Maybe.map2 Decimal (Integer.fromString s_) (Just e)
+
+            i :: f :: [] ->
+                let
+                    f_ =
+                        trimTrailingZero f
+
+                    e =
+                        Basics.negate (String.length f_)
+
+                    integer =
+                        Integer.fromString (i ++ f_)
+                in
+                    if integer == Just Integer.zero then
                         Just Zero
                     else
-                        Maybe.map ((flip Decimal) e) i
+                        Maybe.map (\i -> Decimal i e) integer
 
-
-getSigExpFromString : String -> ( String, Int )
-getSigExpFromString =
-    String.foldr
-        (\c ( acc, e ) ->
-            if c == '0' && acc == "" then
-                ( acc, e + 1 )
-            else
-                ( String.cons c acc, e )
-        )
-        ( "", 0 )
+            _ ->
+                Nothing
 
 
 trimTrailingZero : String -> String
 trimTrailingZero =
-    String.foldr
-        (\c cs ->
-            if c == '0' && cs == "" then
-                ""
-            else
-                String.cons c cs
-        )
-        ""
+    Regex.replace Regex.All (Regex.regex "(?<=[1-9])0*$") (\_ -> "")
 
 
 fromFloat : Float -> Decimal
 fromFloat f =
-    f
-        |> Basics.toString
-        |> fromString
-        |> Maybe.withDefault Zero
+    Maybe.withDefault Zero (fromString_ (Basics.toString f))
 
 
 toString : Decimal -> String
@@ -206,14 +197,14 @@ toString d =
             "0"
 
         Decimal i e ->
-            if Integer.gte i (Integer.fromInt 0) then
-                applyExponent (Integer.toString i) e
+            if Integer.gte i Integer.zero then
+                applyExponent e (Integer.toString i)
             else
-                "-" ++ (applyExponent (Integer.toString (Integer.abs i)) e)
+                "-" ++ (applyExponent e (Integer.toString (Integer.abs i)))
 
 
-applyExponent : String -> Int -> String
-applyExponent s e =
+applyExponent : Int -> String -> String
+applyExponent e s =
     case Basics.compare e 0 of
         GT ->
             s ++ (String.repeat e "0")
@@ -226,18 +217,18 @@ applyExponent s e =
                 e_ =
                     Basics.abs e
 
-                ( i, f ) =
-                    case Basics.compare (String.length s) e_ of
-                        GT ->
-                            ( String.dropRight e_ s, String.right e_ s )
-
-                        EQ ->
-                            ( "0", s )
-
-                        LT ->
-                            ( "0", String.padLeft e_ '0' s )
+                l =
+                    String.length s
             in
-                i ++ "." ++ f
+                case Basics.compare l e_ of
+                    GT ->
+                        String.slice 0 e s ++ "." ++ String.slice e l s
+
+                    EQ ->
+                        "0." ++ s
+
+                    LT ->
+                        "0." ++ String.padLeft e_ '0' s
 
 
 
@@ -259,19 +250,19 @@ add d1 d2 =
                     if e1 >= e2 then
                         let
                             normalizer =
-                                "1"
-                                    ++ (String.repeat (e1 - e2) "0")
-                                    |> Integer.fromString
-                                    |> Maybe.withDefault (Integer.fromInt 0)
+                                if (e1 - e2) < 11 then
+                                    Integer.fromInt (10 ^ (e1 - e2))
+                                else
+                                    Maybe.withDefault Integer.zero (Integer.fromString ("1" ++ (String.repeat (e1 - e2) "0")))
                         in
                             ( Integer.add (Integer.mul s1 normalizer) s2, e2 )
                     else
                         let
                             normalizer =
-                                "1"
-                                    ++ (String.repeat (e2 - e1) "0")
-                                    |> Integer.fromString
-                                    |> Maybe.withDefault (Integer.fromInt 0)
+                                if (e2 - e1) < 11 then
+                                    Integer.fromInt (10 ^ (e2 - e1))
+                                else
+                                    Maybe.withDefault Integer.zero (Integer.fromString ("1" ++ (String.repeat (e2 - e1) "0")))
                         in
                             ( Integer.add s1 (Integer.mul s2 normalizer), e1 )
             in
@@ -309,6 +300,10 @@ mul d1 d2 =
                 renormalizeDecimal d_
 
 
+
+-- In case of infinite decimal, stop calculation at 10 ^ -20
+
+
 div : Decimal -> Decimal -> Maybe Decimal
 div d1 d2 =
     case ( d1, d2 ) of
@@ -324,7 +319,7 @@ div d1 d2 =
                     e1 - e2
 
                 zeroInt =
-                    Integer.fromInt 0
+                    Integer.zero
 
                 isPositive =
                     Integer.lt s1 zeroInt == Integer.lt s2 zeroInt
@@ -343,41 +338,29 @@ div d1 d2 =
 
 div_ : Significand -> Significand -> ( Significand, Exponent ) -> ( Significand, Exponent )
 div_ s1 s2 ( s, e ) =
-    let
-        hasNoRemainder : Significand -> Bool
-        hasNoRemainder s =
-            s == Integer.fromInt 0
+    if e < maxPrecision || s1 == Integer.zero then
+        ( s, e + 1 )
+    else
+        let
+            digit =
+                Integer.ten
 
-        hasGivenPrecision : Exponent -> Exponent -> Bool
-        hasGivenPrecision targetE currentE =
-            currentE < targetE
-    in
-        if hasGivenPrecision -20 e || hasNoRemainder s1 then
-            ( s, e + 1 )
-        else
-            let
-                digit =
-                    Integer.fromInt 10
+            ( q, r ) =
+                Integer.unsafeDivmod s1 s2
 
-                ( q, r ) =
-                    Integer.unsafeDivmod s1 s2
+            s_ =
+                Integer.add (Integer.mul s digit) q
 
-                s_ =
-                    Integer.add (Integer.mul s digit) q
-
-                e_ =
-                    e - 1
-
-                s1_ =
-                    Integer.mul r digit
-            in
-                div_ s1_ s2 ( s_, e_ )
+            s1_ =
+                Integer.mul r digit
+        in
+            div_ s1_ s2 ( s_, e - 1 )
 
 
 unsafeDiv : Decimal -> Decimal -> Decimal
 unsafeDiv d1 d2 =
     div d1 d2
-        |> Maybe.withDefault (fromInt 0)
+        |> Maybe.withDefault Zero
 
 
 
@@ -415,20 +398,20 @@ compare d1 d2 =
             EQ
 
         ( Decimal s e, Zero ) ->
-            Integer.compare s (Integer.fromInt 0)
+            Integer.compare s Integer.zero
 
         ( Zero, Decimal s e ) ->
-            Integer.compare (Integer.fromInt 0) s
+            Integer.compare Integer.zero s
 
         ( Decimal s1 e1, Decimal s2 e2 ) ->
             case Basics.compare e1 e2 of
                 GT ->
                     let
                         normalizer =
-                            "1"
-                                ++ (String.repeat (e1 - e2) "0")
-                                |> Integer.fromString
-                                |> Maybe.withDefault (Integer.fromInt 0)
+                            if (e1 - e2) < 11 then
+                                Integer.fromInt (10 ^ (e1 - e2))
+                            else
+                                Maybe.withDefault Integer.zero (Integer.fromString ("1" ++ (String.repeat (e1 - e2) "0")))
                     in
                         Integer.compare (Integer.mul s1 normalizer) s2
 
@@ -438,10 +421,10 @@ compare d1 d2 =
                 LT ->
                     let
                         normalizer =
-                            "1"
-                                ++ (String.repeat (e2 - e1) "0")
-                                |> Integer.fromString
-                                |> Maybe.withDefault (Integer.fromInt 0)
+                            if (e2 - e1) < 11 then
+                                Integer.fromInt (10 ^ (e2 - e1))
+                            else
+                                Maybe.withDefault Integer.zero (Integer.fromString ("1" ++ (String.repeat (e2 - e1) "0")))
                     in
                         Integer.compare s1 (Integer.mul s2 normalizer)
 
@@ -554,22 +537,20 @@ roundWithContext { e, method } d =
         Decimal ds de ->
             if e <= de then
                 d
-            else if e > (countDigits ds) + de + 1 then
+            else if e > (Integer.countDigits ds) + de + 1 then
                 Zero
             else
                 let
                     divisor =
-                        (10 ^ (e - de))
-                            |> Integer.fromInt
+                        Integer.fromInt (10 ^ (e - de))
 
                     ds_ =
                         divRound method ds divisor
                 in
-                    if Integer.eq ds_ (Integer.fromInt 0) then
+                    if Integer.eq ds_ Integer.zero then
                         Zero
                     else
-                        Decimal ds_ e
-                            |> renormalizeDecimal
+                        renormalizeDecimal (Decimal ds_ e)
 
 
 divRound : RoundingMethod -> Integer -> Integer -> Integer
@@ -598,34 +579,34 @@ roundHalfToEven i1 i2 =
             Integer.unsafeDivmod i1 i2
 
         mod =
-            case Integer.compare (Integer.fromInt 2 |> Integer.mul r >> Integer.abs) (Integer.abs i2) of
+            case Integer.compare (Integer.abs (Integer.mul (Integer.fromInt 2) r)) (Integer.abs i2) of
                 LT ->
-                    Integer.fromInt 0
+                    Integer.zero
 
                 EQ ->
-                    if Integer.unsafeRem q (Integer.fromInt 2) /= Integer.fromInt 0 then
-                        case Integer.compare i1 (Integer.fromInt 0) of
+                    if Integer.unsafeRem q (Integer.fromInt 2) /= Integer.zero then
+                        case Integer.compare i1 Integer.zero of
                             LT ->
                                 Integer.fromInt -1
 
                             EQ ->
-                                Integer.fromInt 0
+                                Integer.zero
 
                             GT ->
-                                Integer.fromInt 1
+                                Integer.one
                     else
-                        Integer.fromInt 0
+                        Integer.zero
 
                 GT ->
-                    case Integer.compare i1 (Integer.fromInt 0) of
+                    case Integer.compare i1 Integer.zero of
                         LT ->
                             Integer.fromInt -1
 
                         EQ ->
-                            Integer.fromInt 0
+                            Integer.zero
 
                         GT ->
-                            Integer.fromInt 1
+                            Integer.one
     in
         Integer.add q mod
 
@@ -643,7 +624,7 @@ roundDown i1 i2 =
             Integer.unsafeDivmod i1 i2
 
         z =
-            Integer.fromInt 0
+            Integer.zero
 
         isPositive =
             (Integer.lt i1 z) == (Integer.lt i2 z)
@@ -686,12 +667,12 @@ roundUp i1 i2 =
 
                 EQ ->
                     if isPositive then
-                        Integer.add q (Integer.fromInt 1)
+                        Integer.add q Integer.one
                     else
                         q
 
                 GT ->
-                    Integer.add q (Integer.fromInt 1)
+                    Integer.add q Integer.one
 
 
 roundAwayFromZero : Integer -> Integer -> Integer
@@ -701,7 +682,7 @@ roundAwayFromZero i1 i2 =
             Integer.unsafeDivmod i1 i2
 
         z =
-            Integer.fromInt 0
+            Integer.zero
 
         isPositive =
             (Integer.lt i1 z) == (Integer.lt i2 z)
@@ -715,32 +696,12 @@ roundAwayFromZero i1 i2 =
 
                 EQ ->
                     if isPositive then
-                        Integer.add q (Integer.fromInt 1)
+                        Integer.add q Integer.one
                     else
                         Integer.add q (Integer.fromInt -1)
 
                 GT ->
-                    Integer.add q (Integer.fromInt 1)
-
-
-countDigits : Integer -> Int
-countDigits i =
-    countDigits_ i 0
-
-
-countDigits_ : Integer -> Int -> Int
-countDigits_ i acc =
-    let
-        i_ =
-            Integer.unsafeDiv i (Integer.fromInt 10)
-
-        acc_ =
-            acc + 1
-    in
-        if Integer.eq (Integer.fromInt 0) i_ then
-            acc_
-        else
-            countDigits_ i_ acc_
+                    Integer.add q Integer.one
 
 
 
@@ -756,29 +717,24 @@ renormalizeDecimal d =
         Decimal s e ->
             let
                 ( s_, e_ ) =
-                    getSigExpFromInteger ( s, e )
+                    getSigExpFromInteger s
             in
-                Decimal s_ e_
+                Decimal s_ (e + e_)
 
 
-getSigExpFromInteger : ( Integer, Int ) -> ( Integer, Int )
-getSigExpFromInteger ( i, e ) =
+getSigExpFromInteger : Integer -> ( Integer, Int )
+getSigExpFromInteger i =
     let
-        ten =
-            Integer.fromInt 10
+        s =
+            (Integer.toString i)
 
-        ( q, r ) =
-            Integer.unsafeDivmod i ten
+        s_ =
+            trimTrailingZero (Integer.toString i)
 
-        z =
-            Integer.fromInt 0
+        i_ =
+            Maybe.withDefault Integer.zero (Integer.fromString s_)
+
+        e =
+            String.length s - String.length s_
     in
-        case ( q == z, r == z ) of
-            ( True, True ) ->
-                ( i, e )
-
-            ( _, True ) ->
-                getSigExpFromInteger ( q, e + 1 )
-
-            _ ->
-                ( i, e )
+        ( i_, e )

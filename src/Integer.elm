@@ -20,6 +20,8 @@ module Integer
         , unsafeDiv
         , rem
         , unsafeRem
+        , toString
+        , countDigits
         , abs
         , negate
         , compare
@@ -28,7 +30,6 @@ module Integer
         , gt
         , gte
         , eq
-        , toString
         )
 
 import Char
@@ -582,6 +583,22 @@ toString i =
 trimLeadingZeroFromStr : String -> String
 trimLeadingZeroFromStr =
     Regex.replace Regex.All (Regex.regex "^0*") (\_ -> "")
+
+
+
+-- Integer length
+
+
+countDigits : Integer -> Int
+countDigits i =
+    let
+        s =
+            toString i
+    in
+        if String.startsWith "-" s then
+            String.length (String.dropLeft 1 s)
+        else
+            String.length s
 
 
 

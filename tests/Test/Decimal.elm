@@ -3,12 +3,13 @@ module Test.Decimal exposing (..)
 import Expect exposing (Expectation)
 import Fuzz exposing (Fuzzer, floatRange, custom)
 import Random.Pcg as Random exposing (Generator)
-import Test exposing (..)
 import Shrink exposing (Shrinker)
+import Test exposing (..)
 import Lazy.List exposing (empty, (:::))
-import Decimal exposing (..)
 import Char
+import Decimal exposing (..)
 import Integer
+import Regex
 import Test.Integer exposing (intString, maxIntRange)
 
 
@@ -101,14 +102,7 @@ join mx =
 
 trimTrailingZero : String -> String
 trimTrailingZero =
-    String.foldr
-        (\c cs ->
-            if c == '0' && cs == "" then
-                ""
-            else
-                String.cons c cs
-        )
-        ""
+    Regex.replace Regex.All (Regex.regex "(?<=[1-9])0*$") (\_ -> "")
 
 
 suite : Test
