@@ -182,7 +182,7 @@ fromString_ s =
 
 trimTrailingZero : String -> String
 trimTrailingZero =
-    Regex.replace Regex.All (Regex.regex "(?<=[1-9])0*$") (\_ -> "")
+    Regex.replace Regex.All (Regex.regex "0*$") (\_ -> "")
 
 
 fromFloat : Float -> Decimal
