@@ -1,383 +1,510 @@
-module Test.Decimal exposing (..)
+module Test.Decimal exposing (suite)
 
-import Expect exposing (Expectation)
-import Fuzz exposing (Fuzzer, floatRange, custom)
-import Random.Pcg as Random exposing (Generator)
-import Shrink exposing (Shrinker)
-import Test exposing (..)
-import Lazy.List exposing (empty, (:::))
 import Char
-import Decimal exposing (..)
+import Decimal exposing (Decimal, Exponent)
+import Expect exposing (Expectation)
+import Fuzz exposing (Fuzzer)
 import Integer
+import Random exposing (Generator)
 import Regex
-import Test.Integer exposing (intString, maxIntRange)
+import Shrink exposing (Shrinker)
+import Test exposing (Test, describe, fuzz, fuzz2, fuzz3, test)
+import Test.Integer
 
 
-decimalString : Fuzzer String
-decimalString =
-    custom decimalStringGenerator decimalStringShrinker
+fuzzer : Fuzzer Decimal
+fuzzer =
+    Fuzz.oneOf [ sciDecimalFuzzer, decDecimalFuzzer ]
+
+
+sciDecimalFuzzer : Fuzzer Decimal
+sciDecimalFuzzer =
+    Fuzz.custom (Random.map (Decimal.fromString >> Maybe.withDefault (Decimal.fromInt 0)) scientificStringGenerator) shrinker
+
+
+decDecimalFuzzer : Fuzzer Decimal
+decDecimalFuzzer =
+    Fuzz.custom (Random.map (Decimal.fromString >> Maybe.withDefault (Decimal.fromInt 0)) decimalStringGenerator) shrinker
 
 
 decimalStringGenerator : Generator String
 decimalStringGenerator =
     let
         int =
-            Random.choices (List.range 1 2 |> List.map numBuilder)
+            Random.int 1 5
+                |> Random.andThen (\i -> Random.list i (Random.int 0 Random.maxInt))
+                |> Random.map (List.map String.fromInt >> List.foldl (++) "")
 
         fraction =
-            Random.choices (List.range 1 2 |> List.map numBuilder)
-
-        numBuilder : Int -> Generator String
-        numBuilder i =
-            Random.list i (Random.int 0 Random.maxInt)
-                |> Random.map
-                    (List.map Basics.toString
-                        >> List.foldr (++) ""
-                    )
+            Random.int 0 3
+                |> Random.andThen (\i -> Random.list i (Random.int 0 Random.maxInt))
+                |> Random.map (List.map String.fromInt >> List.foldl (++) "")
 
         sign =
-            Random.choice "" "-"
+            Random.uniform "" [ "-" ]
     in
-        Random.map2 (++) sign int
-            |> Random.map2 (flip (++)) (Random.constant ".")
-            |> Random.map2 (flip (++)) fraction
-            |> Random.map trimTrailingZero
+    Random.map2 (++) (Random.constant ".") fraction
+        |> Random.map2 (++) int
+        |> Random.map2 (++) sign
 
 
-decimalStringShrinker : Shrinker String
-decimalStringShrinker s =
+scientificStringGenerator : Generator String
+scientificStringGenerator =
     let
-        isMinimalCase : String -> Bool
-        isMinimalCase s =
-            s
-                |> String.filter Char.isDigit
-                |> String.length
-                |> flip (<=) 2
+        i =
+            Random.int 0 9 |> Random.map String.fromInt
 
-        shrinkNum : String -> String
-        shrinkNum s =
-            if String.length s == 1 then
-                "0"
-            else
-                String.dropRight 1 s
+        f =
+            Random.int Random.minInt Random.maxInt
+                |> Random.map
+                    (String.fromInt
+                        >> (\int ->
+                                if int == "0" then
+                                    ""
 
-        ( sign, num ) =
-            if String.startsWith "-" s then
-                ( "-", String.dropLeft 1 s )
-            else
-                ( "", s )
+                                else
+                                    "." ++ int
+                           )
+                    )
 
-        sepIndex =
-            String.indexes "." num |> List.head
+        coefficient =
+            Random.map2 (++) i f
 
-        ( i, f ) =
-            case sepIndex of
-                Nothing ->
-                    ( num, "" )
-
-                Just index ->
-                    ( String.left index num, String.dropLeft (index + 1) num )
-
-        s_ =
-            if String.isEmpty f then
-                sign ++ (shrinkNum i)
-            else
-                (sign ++ (shrinkNum i)) ++ ("." ++ (shrinkNum f))
+        exponent =
+            Random.int Decimal.minExponent (Basics.negate Decimal.minExponent) |> Random.map (String.fromInt >> (++) "e")
     in
-        if isMinimalCase s then
-            empty
-        else
-            s_ ::: empty
+    Random.map2 (++) coefficient exponent
 
 
-join : Maybe (Maybe a) -> Maybe a
-join mx =
-    case mx of
-        Just x ->
-            x
+shrinker : Shrinker Decimal
+shrinker d =
+    let
+        e =
+            Decimal.exponent d
 
-        Nothing ->
-            Nothing
+        e_ =
+            if e >= 0 then
+                e
+
+            else
+                Basics.min 0 (e + 2)
+
+        d_ =
+            Decimal.div d (Decimal.fromInt 10)
+                |> Maybe.map (Decimal.roundWithContext { e = e_, mode = Decimal.Down })
+                |> Maybe.withDefault (Decimal.fromInt 0)
+    in
+    if Decimal.eq d (Decimal.fromInt 0) || Decimal.eq d d_ then
+        Shrink.noShrink d
+
+    else
+        Shrink.bool True
+            |> Shrink.map (\_ -> d_)
 
 
 trimTrailingZero : String -> String
-trimTrailingZero =
-    Regex.replace Regex.All (Regex.regex "(?<=[1-9])0*$") (\_ -> "")
+trimTrailingZero s =
+    if String.contains "." s && (String.endsWith "0" s || String.endsWith "." s) then
+        trimTrailingZero (String.dropRight 1 s)
+
+    else
+        s
+
+
+
+{--
+`Decimal.div` is tested using `withinTolerance` function, which asserts that `| a - (Decimal.div a b |> Decimal.mul b) | <= 0.01 * a`. This test fails when the quotient has only a few significant digits, i.e. 0.000000000000032, because of computer's precision issue. `preciseDiv` function addresses this issue by calculating quotient with at least 8 significant digits.
+--}
+
+
+preciseDiv : Exponent -> Decimal -> Decimal -> Maybe Decimal
+preciseDiv e d1 d2 =
+    case Decimal.divToMinE e d1 d2 of
+        Nothing ->
+            Nothing
+
+        Just result ->
+            if result |> Decimal.significand |> Integer.countDigits |> (\i -> i > 7) then
+                Just result
+
+            else
+                Decimal.divToMinE (e - 1) d1 d2
+
+
+withinTolerance : Decimal -> Decimal -> Expectation
+withinTolerance d1 d2 =
+    let
+        tolerance =
+            Decimal.fromFloat 0.01
+
+        diff =
+            Decimal.sub d1 d2
+
+        diffBound1 =
+            Decimal.abs (Decimal.mul d1 tolerance)
+
+        diffBound2 =
+            Decimal.abs (Decimal.mul d2 tolerance)
+
+        predicate1 =
+            Decimal.gte diff (Decimal.negate diffBound1)
+                && Decimal.lte diff diffBound1
+
+        predicate2 =
+            Decimal.gte diff (Decimal.negate diffBound2)
+                && Decimal.lte diff diffBound2
+    in
+    if Decimal.eq diff (Decimal.fromInt 0) || predicate1 || predicate2 then
+        Expect.pass
+
+    else
+        Expect.fail ("Difference between values is: " ++ Decimal.toString diff ++ ". The difference should be one of the following: 0, between " ++ (diffBound1 |> Decimal.negate >> Decimal.toString) ++ " and " ++ (diffBound1 |> Decimal.toString) ++ ", or between " ++ (diffBound2 |> Decimal.negate >> Decimal.toString) ++ " and " ++ (diffBound2 |> Decimal.toString) ++ ".")
+
+
+sqrtValues : List ( Int, String )
+sqrtValues =
+    [ ( 2, "1.41421356237309504880168872420969807856967187537694807317667973799073247846" )
+    , ( 3, "1.73205080756887729352744634150587236694280525381038062805580697945193301690" )
+    , ( 5, "2.23606797749978969640917366873127623544061835961152572427089724541052092563" )
+    , ( 6, "2.44948974278317809819728407470589139196594748065667012843269256725096037745" )
+    , ( 7, "2.64575131106459059050161575363926042571025918308245018036833445920106882323" )
+    , ( 8, "2.82842712474619009760337744841939615713934375075389614635335947598146495692" )
+    , ( 10, "3.16227766016837933199889354443271853371955513932521682685750485279259443863" )
+    , ( 11, "3.31662479035539984911493273667068668392708854558935359705868214611648464260" )
+    , ( 12, "3.46410161513775458705489268301174473388561050762076125611161395890386603381" )
+    , ( 13, "3.60555127546398929311922126747049594625129657384524621271045305622716694829" )
+    , ( 14, "3.74165738677394138558374873231654930175601980777872694630374546732003515630" )
+    , ( 15, "3.87298334620741688517926539978239961083292170529159082658757376611348309193" )
+    , ( 17, "4.12310562561766054982140985597407702514719922537362043439863357309495434633" )
+    , ( 18, "4.24264068711928514640506617262909423570901562613084421953003921397219743538" )
+    , ( 19, "4.35889894354067355223698198385961565913700392523244493689034413815955732820" )
+    , ( 20, "4.47213595499957939281834733746255247088123671922305144854179449082104185127" )
+    , ( 21, "4.58257569495584000658804719372800848898445657676797190260724212390686842554" )
+    ]
 
 
 suite : Test
 suite =
     describe "Decimal module"
         [ describe "fromInt"
-            [ fuzz maxIntRange "should create correct Decimal" <|
+            [ fuzz Test.Integer.maxIntRange "should create correct Decimal" <|
                 \i ->
-                    Expect.equal (i |> fromInt >> Decimal.toString) (Basics.toString i)
+                    Expect.equal (i |> Decimal.fromInt >> Decimal.toString) (String.fromInt i)
             ]
         , describe "fromInteger"
-            [ fuzz intString "should create correct Decimal" <|
+            [ fuzz Test.Integer.fuzzer "should create correct Decimal" <|
                 \i ->
-                    let
-                        integer =
-                            Integer.fromString i
-
-                        decimal =
-                            Maybe.map fromInteger integer
-                    in
-                        Expect.equal (Maybe.map Decimal.toString decimal) (Maybe.map Integer.toString integer)
+                    Expect.equal (i |> Decimal.fromInteger |> Decimal.toString) (Integer.toString i)
             ]
         , describe "fromFloat"
-            [ fuzz (floatRange (toFloat Random.minInt) (toFloat Random.maxInt)) "should create correct Decimal" <|
+            [ fuzz (Fuzz.floatRange (toFloat Random.minInt) (toFloat Random.maxInt)) "should create correct Decimal" <|
                 \f ->
-                    Expect.equal (f |> fromFloat >> Decimal.toString) (Basics.toString f)
+                    Expect.equal (f |> Decimal.fromFloat >> Decimal.toString) (String.fromFloat f)
             ]
         , describe "fromString"
-            [ fuzz decimalString "should create correct Decimal" <|
+            [ fuzz fuzzer "should create correct Decimal" <|
                 \d ->
-                    Expect.equal (Maybe.map Decimal.toString << fromString <| d) (Just d)
+                    Maybe.map2 withinTolerance (d |> Decimal.toString >> Decimal.fromString) (Just d) |> Maybe.withDefault (Expect.fail "failed")
             ]
         , describe "add"
-            [ fuzz2 decimalString decimalString "should have transitivity property" <|
+            [ fuzz2 fuzzer fuzzer "should have transitivity property" <|
                 \d1 d2 ->
-                    let
-                        a =
-                            fromString d1
-
-                        b =
-                            fromString d2
-                    in
-                        Expect.equal (Maybe.map2 add a b) (Maybe.map2 add b a)
-            , fuzz3 decimalString decimalString decimalString "should have associativity property" <|
+                    withinTolerance (Decimal.add d1 d2) (Decimal.add d2 d1)
+            , fuzz3 fuzzer fuzzer fuzzer "should have associativity property" <|
                 \d1 d2 d3 ->
-                    let
-                        a =
-                            fromString d1
-
-                        b =
-                            fromString d2
-
-                        c =
-                            fromString d3
-                    in
-                        Expect.equal (Maybe.map2 add (Maybe.map2 add a b) c)
-                            (Maybe.map2 add
-                                a
-                                (Maybe.map2 add b c)
-                            )
-            , fuzz decimalString "should have identity property" <|
+                    withinTolerance (Decimal.add (Decimal.add d1 d2) d3) (Decimal.add d1 (Decimal.add d2 d3))
+            , fuzz fuzzer "should have identity property" <|
                 \d ->
-                    let
-                        a =
-                            fromString d
-
-                        b =
-                            fromFloat 0
-                    in
-                        Expect.equal (Maybe.map (add b) a) a
-            , fuzz3 decimalString decimalString decimalString "should have distributive property" <|
+                    withinTolerance (Decimal.add (Decimal.fromFloat 0) d) d
+            , fuzz3 fuzzer fuzzer fuzzer "should have distributive property" <|
                 \d1 d2 d3 ->
-                    let
-                        a =
-                            fromString d1
-
-                        b =
-                            fromString d2
-
-                        c =
-                            fromString d3
-                    in
-                        Expect.equal (Maybe.map2 mul a (Maybe.map2 add b c))
-                            (Maybe.map2 add
-                                (Maybe.map2 mul a b)
-                                (Maybe.map2 mul a c)
-                            )
+                    withinTolerance
+                        (Decimal.mul d1 (Decimal.add d2 d3))
+                        (Decimal.add (Decimal.mul d1 d2) (Decimal.mul d1 d3))
             ]
         , describe "sub"
-            [ fuzz decimalString "should have identity property" <|
+            [ fuzz fuzzer "should have identity property" <|
                 \d ->
-                    let
-                        a =
-                            fromString d
-
-                        b =
-                            Just (fromFloat 0)
-                    in
-                        Expect.equal (Maybe.map2 sub a b) a
-            , fuzz decimalString "should have inverse" <|
+                    withinTolerance (Decimal.sub d (Decimal.fromFloat 0)) d
+            , fuzz fuzzer "should have inverse" <|
                 \d ->
-                    let
-                        a =
-                            fromString d
-
-                        b =
-                            Just (fromInt 0)
-                    in
-                        Expect.equal (Maybe.map2 sub a a) b
+                    withinTolerance (Decimal.sub d d) (Decimal.fromInt 0)
             ]
         , describe "mul"
-            [ fuzz2 decimalString decimalString "should have transitivity property" <|
+            [ fuzz2 fuzzer fuzzer "should have transitivity property" <|
                 \d1 d2 ->
-                    let
-                        a =
-                            fromString d1
-
-                        b =
-                            fromString d2
-                    in
-                        Expect.equal (Maybe.map2 mul a b) (Maybe.map2 mul b a)
-            , fuzz3 decimalString decimalString decimalString "should have associativity property" <|
+                    withinTolerance (Decimal.mul d1 d2) (Decimal.mul d2 d1)
+            , fuzz3 fuzzer fuzzer fuzzer "should have associativity property" <|
                 \d1 d2 d3 ->
-                    let
-                        a =
-                            fromString d1
-
-                        b =
-                            fromString d3
-
-                        c =
-                            fromString d3
-                    in
-                        Expect.equal (Maybe.map2 mul (Maybe.map2 mul a b) c)
-                            (Maybe.map2 mul
-                                a
-                                (Maybe.map2 mul b c)
-                            )
-            , fuzz decimalString "should have identity property" <|
+                    withinTolerance
+                        (Decimal.mulToMinE (Decimal.minExponent * 2) (Decimal.mulToMinE (Decimal.minExponent * 2) d1 d2) d3)
+                        (Decimal.mulToMinE (Decimal.minExponent * 2) d1 (Decimal.mulToMinE (Decimal.minExponent * 2) d2 d3))
+            , fuzz fuzzer "should have identity property" <|
                 \d ->
-                    let
-                        a =
-                            fromString d
-
-                        b =
-                            fromFloat 1
-                    in
-                        Expect.equal (Maybe.map (mul b) a) a
-            , fuzz3 decimalString decimalString decimalString "should have distributive property" <|
+                    withinTolerance (Decimal.mul (Decimal.fromFloat 1) d) d
+            , fuzz3 fuzzer fuzzer fuzzer "should have distributive property" <|
                 \d1 d2 d3 ->
-                    let
-                        a =
-                            fromString d1
-
-                        b =
-                            fromString d2
-
-                        c =
-                            fromString d3
-                    in
-                        Expect.equal (Maybe.map2 mul a (Maybe.map2 add b c))
-                            (Maybe.map2 add
-                                (Maybe.map2 mul a b)
-                                (Maybe.map2 mul a c)
-                            )
+                    withinTolerance
+                        (Decimal.mulToMinE (Decimal.minExponent * 2) d1 (Decimal.add d2 d3))
+                        (Decimal.add (Decimal.mulToMinE (Decimal.minExponent * 2) d1 d2) (Decimal.mulToMinE (Decimal.minExponent * 2) d1 d3))
             ]
         , describe "div"
-            [ fuzz decimalString "should have identity property" <|
+            [ fuzz fuzzer "should have identity property" <|
                 \d ->
-                    let
-                        a =
-                            fromString d
-
-                        b =
-                            fromInt 1
-                    in
-                        Expect.equal (Maybe.andThen (flip div b) a) a
+                    Maybe.map2 withinTolerance (Decimal.div d (Decimal.fromInt 1)) (Just d) |> Maybe.withDefault (Expect.fail "failed")
             , describe "should have zero-related properties"
-                [ fuzz decimalString "dividing zero yields zero" <|
+                [ fuzz fuzzer "dividing zero yields zero" <|
                     \d ->
                         let
-                            a =
-                                fromString d
-
-                            b =
-                                fromInt 0
+                            result =
+                                Decimal.div (Decimal.fromInt 0) d
                         in
-                            Expect.equal (Maybe.andThen (div b) a) (Just b)
-                , fuzz decimalString "dividing with zero yields Nothing" <|
+                        if Decimal.eq d (Decimal.fromInt 0) then
+                            Expect.equal result Nothing
+
+                        else
+                            Expect.equal result (Just (Decimal.fromInt 0))
+                , fuzz fuzzer "dividing with zero yields Nothing" <|
                     \d ->
-                        let
-                            a =
-                                fromString d
-
-                            b =
-                                fromInt 0
-                        in
-                            Expect.equal (Maybe.andThen (flip div b) a) Nothing
+                        Expect.equal
+                            (Decimal.div d (Decimal.fromInt 0))
+                            Nothing
                 ]
-            , fuzz2 decimalString decimalString "should produce sufficiently precise result" <|
+            , fuzz2 fuzzer fuzzer "should produce sufficiently precise result" <|
                 \d1 d2 ->
-                    let
-                        a =
-                            fromString d1
+                    case preciseDiv Decimal.minExponent d1 d2 of
+                        Nothing ->
+                            if Decimal.eq d2 (Decimal.fromInt 0) then
+                                Expect.pass
 
-                        b =
-                            fromString d2
-
-                        maybeResult =
-                            join (Maybe.map2 div a b)
-                    in
-                        case maybeResult of
-                            Nothing ->
+                            else
                                 Expect.fail "was given invalid string for generating Decimal"
 
-                            Just result ->
-                                let
-                                    product =
-                                        Maybe.map (mul result) b
-                                in
-                                    if (result |> Decimal.toString >> String.length) < 20 then
-                                        Expect.equal product a
-                                    else
-                                        -- TODO: add test for dynamic comparison for dynamic tolerance
-                                        let
-                                            diff =
-                                                Maybe.map Decimal.abs
-                                                    (Maybe.map2 sub a product)
+                        Just result ->
+                            if Decimal.eq result (Decimal.fromInt 0) then
+                                Expect.pass
 
-                                            tolerance =
-                                                Decimal.fromString ("0." ++ (String.repeat 1 "0") ++ "1")
-                                        in
-                                            Expect.pass
+                            else
+                                withinTolerance (Decimal.mul result d2) d1
             ]
         , describe "abs"
-            [ fuzz decimalString "abs f should be larger than or equal to f" <|
+            [ fuzz fuzzer "abs d should be larger than or equal to d" <|
                 \d ->
-                    case (Maybe.map2 gte (Maybe.map Decimal.abs (fromString d)) (fromString d)) of
-                        Just True ->
-                            Expect.pass
-
-                        _ ->
-                            Expect.fail "property does not hold"
+                    Expect.true "Expected abs value to be gte itself" (Decimal.gte (Decimal.abs d) d)
             ]
         , describe "negate"
-            [ fuzz decimalString "should return original i when applied twice" <|
+            [ fuzz fuzzer "should return original i when applied twice" <|
                 \d ->
-                    let
-                        decimal =
-                            fromString d
-
-                        decimal_ =
-                            decimal
-                                |> Maybe.map (Decimal.negate >> Decimal.negate)
-                    in
-                        Expect.equal decimal decimal_
+                    withinTolerance d (d |> Decimal.negate >> Decimal.negate)
             ]
         , describe "compare"
-            [ fuzz2 decimalString decimalString "should return correct order" <|
+            [ fuzz2 fuzzer fuzzer "should return correct order" <|
                 \d1 d2 ->
-                    let
-                        a =
-                            fromString d1
-
-                        b =
-                            fromString d2
-
-                        comparison =
-                            Maybe.map2 Decimal.compare a b
-                    in
-                        case comparison of
-                            Nothing ->
-                                Expect.fail "was given invalid string for generating Integer"
-
-                            _ ->
-                                Expect.equal (Maybe.map2 Decimal.compare (Maybe.map2 sub a b) (Just (fromInt 0))) comparison
+                    Expect.equal (Decimal.compare (Decimal.sub d1 d2) (Decimal.fromInt 0)) (Decimal.compare d1 d2)
             ]
+        , describe "rounding"
+            [ describe "down"
+                [ test "1.8 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Down } (Decimal.fromFloat 1.8)) (Decimal.fromInt 1)
+                , test "1.5 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Down } (Decimal.fromFloat 1.5)) (Decimal.fromInt 1)
+                , test "1.2 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Down } (Decimal.fromFloat 1.2)) (Decimal.fromInt 1)
+                , test "0.8 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Down } (Decimal.fromFloat 0.8)) (Decimal.fromInt 0)
+                , test "0.5 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Down } (Decimal.fromFloat 0.5)) (Decimal.fromInt 0)
+                , test "0.2 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Down } (Decimal.fromFloat 0.2)) (Decimal.fromInt 0)
+                , test "-0.2 equals -1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Down } (Decimal.fromFloat -0.2)) (Decimal.fromInt -1)
+                , test "-0.5 equals -1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Down } (Decimal.fromFloat -0.5)) (Decimal.fromInt -1)
+                , test "-0.8 equals -1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Down } (Decimal.fromFloat -0.8)) (Decimal.fromInt -1)
+                , test "-1.2 equals -2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Down } (Decimal.fromFloat -1.2)) (Decimal.fromInt -2)
+                , test "-1.5 equals -2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Down } (Decimal.fromFloat -1.5)) (Decimal.fromInt -2)
+                , test "-1.8 equals -2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Down } (Decimal.fromFloat -1.8)) (Decimal.fromInt -2)
+                ]
+            , describe "up"
+                [ test "1.8 equals 2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Up } (Decimal.fromFloat 1.8)) (Decimal.fromInt 2)
+                , test "1.5 equals 2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Up } (Decimal.fromFloat 1.5)) (Decimal.fromInt 2)
+                , test "1.2 equals 2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Up } (Decimal.fromFloat 1.2)) (Decimal.fromInt 2)
+                , test "0.8 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Up } (Decimal.fromFloat 0.8)) (Decimal.fromInt 1)
+                , test "0.5 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Up } (Decimal.fromFloat 0.5)) (Decimal.fromInt 1)
+                , test "0.2 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Up } (Decimal.fromFloat 0.2)) (Decimal.fromInt 1)
+                , test "-0.2 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Up } (Decimal.fromFloat -0.2)) (Decimal.fromInt 0)
+                , test "-0.5 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Up } (Decimal.fromFloat -0.5)) (Decimal.fromInt 0)
+                , test "-0.8 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Up } (Decimal.fromFloat -0.8)) (Decimal.fromInt 0)
+                , test "-1.2 equals -1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Up } (Decimal.fromFloat -1.2)) (Decimal.fromInt -1)
+                , test "-1.5 equals -1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Up } (Decimal.fromFloat -1.5)) (Decimal.fromInt -1)
+                , test "-1.8 equals -1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.Up } (Decimal.fromFloat -1.8)) (Decimal.fromInt -1)
+                ]
+            , describe "towards zero"
+                [ test "1.8 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.TowardsZero } (Decimal.fromFloat 1.8)) (Decimal.fromInt 1)
+                , test "1.5 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.TowardsZero } (Decimal.fromFloat 1.5)) (Decimal.fromInt 1)
+                , test "1.2 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.TowardsZero } (Decimal.fromFloat 1.2)) (Decimal.fromInt 1)
+                , test "0.8 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.TowardsZero } (Decimal.fromFloat 0.8)) (Decimal.fromInt 0)
+                , test "0.5 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.TowardsZero } (Decimal.fromFloat 0.5)) (Decimal.fromInt 0)
+                , test "0.2 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.TowardsZero } (Decimal.fromFloat 0.2)) (Decimal.fromInt 0)
+                , test "-0.2 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.TowardsZero } (Decimal.fromFloat -0.2)) (Decimal.fromInt 0)
+                , test "-0.5 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.TowardsZero } (Decimal.fromFloat -0.5)) (Decimal.fromInt 0)
+                , test "-0.8 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.TowardsZero } (Decimal.fromFloat -0.8)) (Decimal.fromInt 0)
+                , test "-1.2 equals -2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.TowardsZero } (Decimal.fromFloat -1.2)) (Decimal.fromInt -1)
+                , test "-1.5 equals -2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.TowardsZero } (Decimal.fromFloat -1.5)) (Decimal.fromInt -1)
+                , test "-1.8 equals -2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.TowardsZero } (Decimal.fromFloat -1.8)) (Decimal.fromInt -1)
+                ]
+            , describe "away from zero"
+                [ test "1.8 equals 2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.AwayFromZero } (Decimal.fromFloat 1.8)) (Decimal.fromInt 2)
+                , test "1.5 equals 2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.AwayFromZero } (Decimal.fromFloat 1.5)) (Decimal.fromInt 2)
+                , test "1.2 equals 2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.AwayFromZero } (Decimal.fromFloat 1.2)) (Decimal.fromInt 2)
+                , test "0.8 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.AwayFromZero } (Decimal.fromFloat 0.8)) (Decimal.fromInt 1)
+                , test "0.5 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.AwayFromZero } (Decimal.fromFloat 0.5)) (Decimal.fromInt 1)
+                , test "0.2 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.AwayFromZero } (Decimal.fromFloat 0.2)) (Decimal.fromInt 1)
+                , test "-0.2 equals -1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.AwayFromZero } (Decimal.fromFloat -0.2)) (Decimal.fromInt -1)
+                , test "-0.5 equals -1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.AwayFromZero } (Decimal.fromFloat -0.5)) (Decimal.fromInt -1)
+                , test "-0.8 equals -1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.AwayFromZero } (Decimal.fromFloat -0.8)) (Decimal.fromInt -1)
+                , test "-1.2 equals -2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.AwayFromZero } (Decimal.fromFloat -1.2)) (Decimal.fromInt -2)
+                , test "-1.5 equals -2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.AwayFromZero } (Decimal.fromFloat -1.5)) (Decimal.fromInt -2)
+                , test "-1.8 equals -2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.AwayFromZero } (Decimal.fromFloat -1.8)) (Decimal.fromInt -2)
+                ]
+            , describe "half to even"
+                [ test "1.8 equals 2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.HalfToEven } (Decimal.fromFloat 1.8)) (Decimal.fromInt 2)
+                , test "1.5 equals 2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.HalfToEven } (Decimal.fromFloat 1.5)) (Decimal.fromInt 2)
+                , test "1.2 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.HalfToEven } (Decimal.fromFloat 1.2)) (Decimal.fromInt 1)
+                , test "0.8 equals 1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.HalfToEven } (Decimal.fromFloat 0.8)) (Decimal.fromInt 1)
+                , test "0.5 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.HalfToEven } (Decimal.fromFloat 0.5)) (Decimal.fromInt 0)
+                , test "0.2 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.HalfToEven } (Decimal.fromFloat 0.2)) (Decimal.fromInt 0)
+                , test "-0.2 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.HalfToEven } (Decimal.fromFloat -0.2)) (Decimal.fromInt 0)
+                , test "-0.5 equals 0" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.HalfToEven } (Decimal.fromFloat -0.5)) (Decimal.fromInt 0)
+                , test "-0.8 equals -1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.HalfToEven } (Decimal.fromFloat -0.8)) (Decimal.fromInt -1)
+                , test "-1.2 equals -1" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.HalfToEven } (Decimal.fromFloat -1.2)) (Decimal.fromInt -1)
+                , test "-1.5 equals -2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.HalfToEven } (Decimal.fromFloat -1.5)) (Decimal.fromInt -2)
+                , test "-1.8 equals -2" <|
+                    \_ ->
+                        Expect.equal (Decimal.roundWithContext { e = 0, mode = Decimal.HalfToEven } (Decimal.fromFloat -1.8)) (Decimal.fromInt -2)
+                ]
+            ]
+        , describe "sqrt" <|
+            List.map
+                (\( i, sqrtValue ) ->
+                    test ("sqrt of " ++ String.fromInt i) <|
+                        \_ ->
+                            case i |> Decimal.fromInt >> Decimal.sqrtToMinE -74 >> Maybe.map (Decimal.toString >> String.startsWith (sqrtValue |> String.left 74)) of
+                                Just bool ->
+                                    Expect.true "is correct up to 74 digits" bool
+
+                                Nothing ->
+                                    Expect.fail "could not be calculated"
+                )
+                sqrtValues
         ]

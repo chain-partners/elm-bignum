@@ -1,35 +1,95 @@
 module Integer exposing
-    ( Integer
-    , abs
-    , add
-    , billion
-    , compare
-    , countDigits
-    , div
-    , divmod
-    , eq
+    ( Integer(..)
     , fromInt
     , fromString
-    , gt
-    , gte
-    , hundred
-    , lt
-    , lte
-    , million
-    , mul
-    , negate
-    , one
-    , rem
-    , sub
-    , ten
-    , thousand
-    , toString
-    , unsafeDiv
-    , unsafeDivmod
-    , unsafeRem
     , zero
+    , one
+    , ten
+    , hundred
+    , thousand
+    , million
+    , billion
     , zillion
+    , add
+    , sub
+    , mul
+    , divmod
+    , div
+    , remainderBy
+    , toString
+    , negate
+    , abs
+    , compare
+    , lt
+    , gt
+    , lte
+    , gte
+    , eq
+    , countDigits
+    , Sign(..)
     )
+
+{-| This library provides arbitrary precision `Integer` type and basic arithmetic operations on it.
+
+
+# Definition
+
+@docs Integer
+
+
+# Constructors
+
+`Integer` can be constructed from `Int` or `String`. Several convenience constructors for commonly used numbers are also provided.
+
+@docs fromInt
+@docs fromString
+@docs zero
+@docs one
+@docs ten
+@docs hundred
+@docs thousand
+@docs million
+@docs billion
+@docs trillion
+@docs zillion
+
+
+# Basic Arithmetic
+
+@docs add
+@docs sub
+@docs mul
+@docs divmod
+@docs div
+@docs remainderBy
+
+
+# String Representation
+
+@docs toString
+
+
+# Sign Modification
+
+@docs negate
+@docs abs
+
+
+# Comparison
+
+@docs compare
+@docs lt
+@docs gt
+@docs lte
+@docs gte
+@docs eq
+
+
+# Other Functions
+
+@docs countDigits
+
+-}
 
 import Regex
 
@@ -38,6 +98,8 @@ import Regex
 -- Types
 
 
+{-| An `Integer` is an arbitrary-precision number where its 'digits' of base 10 ^ 7 are represented as a linked list in little endian order. This base is chosen to simplify multiplication, toString, and debugging in Elm debugger.
+-}
 type Integer
     = Integer Sign Magnitude
     | Zero
@@ -77,6 +139,21 @@ defaultBase =
 -- Constructors
 
 
+{-| Construct `Integer` from `Int`.
+
+    fromInt 83748314374831 -- Integer Positive [4374831,8374831] : Integer
+
+    fromInt 0 -- Zero : Integer
+
+    fromInt -93939193 -- Integer Negative [3939193,9] : Integer
+
+    Entering numbers that cannot be represented by Javascript number type will result in incorrect representation. Use fromString in that case.
+
+    fromInt 81927398127398127389172893712893712893798123 |> toString -- "-10497034289617408" : String
+
+    fromString "81927398127398127389172893712893712893798123" |> Maybe.map toString -- Just "81927398127398127389172893712893712893798123" : Maybe String
+
+-}
 fromInt : Int -> Integer
 fromInt i =
     case Basics.compare i 0 of
@@ -105,9 +182,16 @@ magnitudeFromInt_ acc i =
         List.reverse (i :: acc)
 
     else
-        magnitudeFromInt_ (remainderBy defaultBase i :: acc) q
+        magnitudeFromInt_ (Basics.remainderBy defaultBase i :: acc) q
 
 
+{-| Construct `Integer` from `String`.
+
+    fromString "71289371892739812798734895701347589273948523984573" -- Just (Integer Positive [3984573,7394852,3475892,4895701,1279873,8927398,1289371,7]) : Maybe Integer
+
+    fromString "jiaosdjf" -- Nothing : Maybe Integer
+
+-}
 fromString : String -> Maybe Integer
 fromString s =
     if isValidString s then
@@ -169,41 +253,57 @@ combine =
         (Just [])
 
 
+{-| Convenience constructor for 0, equivalent to `fromInt 0`
+-}
 zero : Integer
 zero =
     Zero
 
 
+{-| Convenience constructor for 1, equivalent to `fromInt 1`
+-}
 one : Integer
 one =
     Integer Positive [ 1 ]
 
 
+{-| Convenience constructor for 10, equivalent to `fromInt 10`
+-}
 ten : Integer
 ten =
     Integer Positive [ 10 ]
 
 
+{-| Convenience constructor for one hundred, equivalent to `fromInt 100`
+-}
 hundred : Integer
 hundred =
     Integer Positive [ 100 ]
 
 
+{-| Convenience constructor for one thousand, equivalent to `fromInt 1000`
+-}
 thousand : Integer
 thousand =
     Integer Positive [ 1000 ]
 
 
+{-| Convenience constructor for one million, equivalent to `fromInt 1000000`
+-}
 million : Integer
 million =
     Integer Positive [ 1000000 ]
 
 
+{-| Convenience constructor for one billion, equivalent to `fromInt 1000000000`
+-}
 billion : Integer
 billion =
     Integer Positive [ 0, 100 ]
 
 
+{-| Convenience constructor for one zillion, equivalent to `fromInt 1000000000000`
+-}
 zillion : Integer
 zillion =
     Integer Positive [ 0, 100000 ]
@@ -213,6 +313,11 @@ zillion =
 -- Basic Operations
 
 
+{-| Add two `Integer`s.
+
+    add ten million == Integer Positive [1000010] : Integer
+
+-}
 add : Integer -> Integer -> Integer
 add i1 i2 =
     case ( i1, i2 ) of
@@ -248,6 +353,11 @@ add i1 i2 =
             Integer s1 (addMagnitudes m1 m2)
 
 
+{-| Subtract two `Integer`s.
+
+    sub million zillion == Integer Negative [9000000,99999] : Integer
+
+-}
 sub : Integer -> Integer -> Integer
 sub i1 i2 =
     case ( i1, i2 ) of
@@ -331,6 +441,11 @@ handleFinalCarry ( c, m ) =
                     c :: m
 
 
+{-| Multiply two `Integer`s.
+
+    mul (fromInt -873812381) (fromInt 78738732) == Integer Negative [5840892,287888,688] : Integer
+
+-}
 mul : Integer -> Integer -> Integer
 mul i1 i2 =
     case ( i1, i2 ) of
@@ -394,32 +509,13 @@ sumPartialProducts magList =
     List.foldl addMagnitudes [] magList
 
 
-div : Integer -> Integer -> Maybe Integer
-div dividend divisor =
-    divmod dividend divisor
-        |> Maybe.map Tuple.first
+{-| Divide two `Integer`s and get both quotient and remainder.
 
+    divmod (fromInt -873812381) (fromInt 78738732) == Just (Integer Negative [11],Integer Negative [7686329]) : Maybe ( Integer, Integer )
+    divmod zero (fromInt 871)                      == Just Zero : Maybe Integer
+    divmod (fromInt 871) zero                      == Nothing : Maybe Integer
 
-unsafeDiv : Integer -> Integer -> Integer
-unsafeDiv dividend divisor =
-    divmod dividend divisor
-        |> Maybe.map Tuple.first
-        |> Maybe.withDefault Zero
-
-
-rem : Integer -> Integer -> Maybe Integer
-rem dividend divisor =
-    divmod dividend divisor
-        |> Maybe.map Tuple.second
-
-
-unsafeRem : Integer -> Integer -> Integer
-unsafeRem dividend divisor =
-    divmod dividend divisor
-        |> Maybe.map Tuple.second
-        |> Maybe.withDefault Zero
-
-
+-}
 divmod : Integer -> Integer -> Maybe ( Integer, Integer )
 divmod dividend divisor =
     case ( dividend, divisor ) of
@@ -470,12 +566,6 @@ adjustSign dividend divisor ( q, r ) =
 
         _ ->
             ( q, r )
-
-
-unsafeDivmod : Integer -> Integer -> ( Integer, Integer )
-unsafeDivmod dividend divisor =
-    divmod dividend divisor
-        |> Maybe.withDefault ( Zero, Zero )
 
 
 divmod_ : Integer -> Integer -> Integer -> Integer -> Maybe ( Integer, Integer )
@@ -566,10 +656,42 @@ divmodPartialDividend dividend divisor divExpediter acc =
                     divmodPartialDividend dividend_ divisor divExpediter (add acc (fromInt divExpediter))
 
 
+{-| Divide two `Integer`s and get quotient.
+
+    div (fromInt -873812381) (fromInt 78738732) == Just (Integer Negative [11]) : Maybe Integer
+    div zero (fromInt 871)                      == Just Zero : Maybe Integer
+    div (fromInt 871) zero                      == Nothing : Maybe Integer
+
+-}
+div : Integer -> Integer -> Maybe Integer
+div dividend divisor =
+    divmod dividend divisor
+        |> Maybe.map Tuple.first
+
+
+{-| Divide two `Integer`s and get remainder.
+
+    remainderBy (fromInt -873812381) (fromInt 78738732) == Just (Integer Negative [7686329]) : Maybe Integer
+    remainderBy zero (fromInt 871)                      == Just Zero : Maybe Integer
+    remainderBy (fromInt 871) zero                      == Nothing : Maybe Integer
+
+-}
+remainderBy : Integer -> Integer -> Maybe Integer
+remainderBy dividend divisor =
+    divmod dividend divisor
+        |> Maybe.map Tuple.second
+
+
 
 -- String representation
 
 
+{-| Represent `Integer` as `String`.
+
+    mul (fromInt 8172387) (fromInt -332)
+        |> toString == "-2713232484" : String
+
+-}
 toString : Integer -> String
 toString i =
     case i of
@@ -597,26 +719,16 @@ trimLeadingZeroFromStr =
 
 
 
--- Integer length
-
-
-countDigits : Integer -> Int
-countDigits i =
-    let
-        s =
-            toString i
-    in
-    if String.startsWith "-" s then
-        String.length (String.dropLeft 1 s)
-
-    else
-        String.length s
-
-
-
 -- Sign modification functions
 
 
+{-| Negate the sign of `Integer`.
+
+    negate (fromInt -332)  == Integer Positive [332] : Integer
+    negate (fromInt 8872)  == Integer Negative [8872] : Integer
+    negate zero            == Zero : Integer
+
+-}
 negate : Integer -> Integer
 negate i =
     case i of
@@ -630,6 +742,13 @@ negate i =
             Integer Positive m
 
 
+{-| Get absolute value of `Integer`.
+
+    negate (fromInt -332)  == Integer Positive [332] : Integer
+    negate (fromInt 8872)  == Integer Positive [8872] : Integer
+    negate zero            == Zero : Integer
+
+-}
 abs : Integer -> Integer
 abs i =
     case i of
@@ -647,6 +766,15 @@ abs i =
 -- Comparison functions
 
 
+{-| Compare two `Integer`s.
+
+    compare one zero == GT
+
+    compare one one == EQ
+
+    compare (negate million) one == LT
+
+-}
 compare : Integer -> Integer -> Order
 compare i1 i2 =
     case ( i1, i2 ) of
@@ -750,6 +878,28 @@ eq i1 i2 =
 
         _ ->
             False
+
+
+
+-- Integer length
+
+
+{-| Count the number of decimal digits.
+
+    mul (fromInt 8172387) (fromInt -332) |> countDigits == 10 : Int
+
+-}
+countDigits : Integer -> Int
+countDigits i =
+    let
+        s =
+            toString i
+    in
+    if String.startsWith "-" s then
+        String.length (String.dropLeft 1 s)
+
+    else
+        String.length s
 
 
 
