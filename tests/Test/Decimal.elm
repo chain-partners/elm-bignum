@@ -123,12 +123,15 @@ preciseDiv e d1 d2 =
         Nothing ->
             Nothing
 
+        Just Decimal.Zero ->
+            Just Decimal.Zero
+
         Just result ->
-            if result |> Decimal.significand |> Integer.countDigits |> (\i -> i > 7) then
+            if result |> Decimal.significand |> Integer.countDigits |> (\i -> i > 7 || i == 0) then
                 Just result
 
             else
-                Decimal.divToMinE (e - 1) d1 d2
+                preciseDiv (e - 8) d1 d2
 
 
 withinTolerance : Decimal -> Decimal -> Expectation
