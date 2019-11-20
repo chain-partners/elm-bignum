@@ -9,7 +9,7 @@ module Integer exposing
     , thousand
     , million
     , billion
-    , zillion
+    , trillion
     , add
     , sub
     , mul
@@ -26,7 +26,6 @@ module Integer exposing
     , gte
     , eq
     , countDigits
-    , Sign(..)
     )
 
 {-| This library provides arbitrary precision `Integer` type and basic arithmetic operations on it.
@@ -51,7 +50,6 @@ module Integer exposing
 @docs million
 @docs billion
 @docs trillion
-@docs zillion
 
 
 # Basic Arithmetic
@@ -302,10 +300,10 @@ billion =
     Integer Positive [ 0, 100 ]
 
 
-{-| Convenience constructor for one zillion, equivalent to `fromInt 1000000000000`
+{-| Convenience constructor for one trillion, equivalent to `fromInt 1000000000000`
 -}
-zillion : Integer
-zillion =
+trillion : Integer
+trillion =
     Integer Positive [ 0, 100000 ]
 
 
@@ -355,7 +353,7 @@ add i1 i2 =
 
 {-| Subtract two `Integer`s.
 
-    sub million zillion == Integer Negative [9000000,99999] : Integer
+    sub million trillion == Integer Negative [9000000,99999] : Integer
 
 -}
 sub : Integer -> Integer -> Integer
