@@ -1,9 +1,9 @@
 {
     "type": "package",
-    "name": "chain-partners/big-num",
+    "name": "chain-partners/elm-bignum",
     "summary": "Elm library for arbitrary precision arithmetic",
     "license": "BSD-3-Clause",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "exposed-modules": [
         "Integer",
         "Decimal"

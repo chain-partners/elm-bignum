@@ -9,13 +9,14 @@ Elm library for arbitrary-precision decimal arithmetic that supports basic arith
 I initially wrote this library because I needed division operation of big decimal numbers. My goal was to write a library that:
 
 1. Supports basic arithmetic operations
-2. Has good enough performance on browser
+2. Has okay performance on browser
 
 ## TODO
 
-* Improve handling of fraction digits that are dropped off
-* Get rid of artificial `Maybe.withDefault` calls
-* Improve performance, especially for division and square root operations
-* Add base conversion, including experimentation with changing default base to 2^26
-* Reimplement `toString` functions using `Parser` library
-* Find a better way to handle `Significand` without relying on `Integer.toString`. Recursion was far too slower than string manipulation using regular expression.
+* Improve handling of fraction digits that are dropped off in `moveZeroesToE` function. They are currently being truncated but should be rounded.
+* Get rid of `Maybe.withDefault` calls in Decimal module if possible.
+* Improve performance, especially for division and square root operations.
+* Add base conversion, including experimentation with changing default base to 2^26.
+* Reimplement `toString` functions using `Parser` library.
+* Find a better way to handle operations on last digits of `Significand` without relying on `Integer.toString`. Current implementation uses string manipulation using regular expression, as my initial implementation using recursion was crushingly slow. 
+* Implement IEEE 754-2019 specifications.
