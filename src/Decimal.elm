@@ -1,5 +1,5 @@
 module Decimal exposing
-    ( Decimal(..)
+    ( Decimal
     , Significand
     , Exponent
     , minExponent
@@ -126,19 +126,23 @@ import Regex exposing (Regex)
 -- Types
 
 
-type alias Significand =
-    Integer
-
-
-type alias Exponent =
-    Int
-
-
-{-| A `Decimal` is an arbitrary precision number where its significand is represented as an `Integer`, and its exponent is represented as `Int`.
+{-| A `Decimal` is an arbitrary precision number with significand and exponent.
 -}
 type Decimal
     = Decimal Significand Exponent
     | Zero
+
+
+{-| `Significand` is an alias for an `Integer`.
+-}
+type alias Significand =
+    Integer
+
+
+{-| `Exponent` is an alias for `Int`.
+-}
+type alias Exponent =
+    Int
 
 
 
@@ -710,6 +714,7 @@ compare d1 d2 =
             Integer.compare s1 s2
 
 
+{-| -}
 lt : Decimal -> Decimal -> Bool
 lt d1 d2 =
     case compare d1 d2 of
@@ -720,6 +725,7 @@ lt d1 d2 =
             False
 
 
+{-| -}
 gt : Decimal -> Decimal -> Bool
 gt d1 d2 =
     case compare d1 d2 of
@@ -730,6 +736,7 @@ gt d1 d2 =
             False
 
 
+{-| -}
 lte : Decimal -> Decimal -> Bool
 lte d1 d2 =
     case compare d1 d2 of
@@ -743,6 +750,7 @@ lte d1 d2 =
             False
 
 
+{-| -}
 gte : Decimal -> Decimal -> Bool
 gte d1 d2 =
     case compare d1 d2 of
@@ -756,6 +764,7 @@ gte d1 d2 =
             False
 
 
+{-| -}
 eq : Decimal -> Decimal -> Bool
 eq d1 d2 =
     case compare d1 d2 of

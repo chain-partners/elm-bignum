@@ -822,6 +822,7 @@ reverseOrder o =
             GT
 
 
+{-| -}
 lt : Integer -> Integer -> Bool
 lt i1 i2 =
     case compare i1 i2 of
@@ -832,6 +833,7 @@ lt i1 i2 =
             False
 
 
+{-| -}
 gt : Integer -> Integer -> Bool
 gt i1 i2 =
     case compare i1 i2 of
@@ -842,6 +844,7 @@ gt i1 i2 =
             False
 
 
+{-| -}
 lte : Integer -> Integer -> Bool
 lte i1 i2 =
     case compare i1 i2 of
@@ -855,6 +858,7 @@ lte i1 i2 =
             False
 
 
+{-| -}
 gte : Integer -> Integer -> Bool
 gte i1 i2 =
     case compare i1 i2 of
@@ -868,6 +872,7 @@ gte i1 i2 =
             False
 
 
+{-| -}
 eq : Integer -> Integer -> Bool
 eq i1 i2 =
     case compare i1 i2 of
