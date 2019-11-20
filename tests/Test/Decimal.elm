@@ -123,11 +123,11 @@ preciseDiv e d1 d2 =
         Nothing ->
             Nothing
 
-        Just Decimal.Zero ->
-            Just Decimal.Zero
-
         Just result ->
-            if result |> Decimal.significand |> Integer.countDigits |> (\i -> i > 7 || i == 0) then
+            if Decimal.eq result (Decimal.fromInt 0) then
+                Just (Decimal.fromInt 0)
+
+            else if result |> Decimal.significand |> Integer.countDigits |> (\i -> i > 7 || i == 0) then
                 Just result
 
             else
