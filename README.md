@@ -1,6 +1,6 @@
 Arbitrary-precision arithmetic package for Elm
 
-# chain-partners/bignum
+# chain-partners/elm-bignum
 
 Elm library for arbitrary-precision decimal arithmetic that supports basic arithmetic, comparison, and rounding operations.
 
